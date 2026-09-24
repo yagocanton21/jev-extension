@@ -9,7 +9,7 @@ const state = {
     lastLatency: 0
   },
   settings: {
-    backendUrl: 'http://localhost:3001',
+    backendUrl: 'http://163.176.205.54:8092',
     minConfidence: 70,
     engineMode: 'backend' // 'local' ou 'backend'
   }
