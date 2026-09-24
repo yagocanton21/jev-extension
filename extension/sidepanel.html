@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jev Voice - Assistente de Navegação</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-dot"></span>
+        <h1 class="brand-title">Jev Navegador por Voz</h1>
+      </div>
+      <button id="btnSettings" class="icon-btn" title="Configurações" aria-label="Configurações">
+        ⚙
+      </button>
+    </header>
+
+    <!-- Main Voice Control -->
+    <section class="voice-section">
+      <button id="btnVoiceToggle" class="btn-voice-large" aria-label="Iniciar reconhecimento de voz">
+        <span class="voice-icon">🎤</span>
+        <span id="voiceButtonText" class="voice-label">OUVIR</span>
+      </button>
+      <div id="voiceStatus" class="status-indicator">Pronto para ouvir ou digitar</div>
+    </section>
+
+    <!-- Silent Text Input & Quick Test Chips -->
+    <section class="card text-input-card">
+      <div class="card-header">
+        <span class="card-label">MODO SILENCIOSO / DIGITAR COMANDO</span>
+      </div>
+      <form id="textCommandForm" class="text-command-form">
+        <input 
+          type="text" 
+          id="inputCommand" 
+          class="command-input" 
+          placeholder="Digite um comando (ex: rolar para baixo)..." 
+          autocomplete="off"
+        >
+        <button type="submit" id="btnSendCommand" class="btn-send-command">▶</button>
+      </form>
+      <div class="quick-chips">
+        <button type="button" class="quick-chip" data-cmd="rolar para baixo">↓ Rolar baixo</button>
+        <button type="button" class="quick-chip" data-cmd="rolar para cima">↑ Rolar cima</button>
+        <button type="button" class="quick-chip" data-cmd="abrir nova aba">+ Nova aba</button>
+        <button type="button" class="quick-chip" data-cmd="fechar aba">✕ Fechar aba</button>
+        <button type="button" class="quick-chip" data-cmd="abrir mercado livre">🛍️ Mercado Livre</button>
+        <button type="button" class="quick-chip" data-cmd="abra o youtube">▶ YouTube</button>
+      </div>
+    </section>
+
+    <!-- Live Transcription Card -->
+    <section class="card transcription-card">
+      <div class="card-header">
+        <span class="card-label">TRANSCRIÇÃO EM TEMPO REAL</span>
+        <span id="recordingBadge" class="badge-live hidden">AO VIVO</span>
+      </div>
+      <div id="transcriptionBox" class="transcription-text placeholder">
+        Clique em "OUVIR" e fale um comando (ex: "abra uma nova aba", "feche essa aba", "role para baixo")...
+      </div>
+    </section>
+
+    <!-- Statistics Panel -->
+    <section class="card stats-card">
+      <div class="card-header">
+        <span class="card-label">ESTATÍSTICAS</span>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <span class="stat-title">MODELO</span>
+          <span id="statModel" class="stat-value highlight">typesafe/jev</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-title">LATÊNCIA</span>
+          <span id="statLatency" class="stat-value">0 ms</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-title">CHAMADAS</span>
+          <span id="statCalls" class="stat-value">0</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-title">AÇÕES</span>
+          <span id="statActions" class="stat-value">0</span>
+        </div>
+        <div class="stat-item stat-item-full">
+          <span class="stat-title">CUSTO ESTIMADO</span>
+          <span id="statCost" class="stat-value">US$ 0,000000</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Decision / Brain Section -->
+    <section class="card decision-card">
+      <div class="card-header">
+        <span class="card-label">DECISÃO DO MOTOR</span>
+        <span id="decisionBadge" class="badge-status waiting">AGUARDANDO</span>
+      </div>
+      
+      <div class="decision-main">
+        <div class="decision-row">
+          <span class="decision-key">Ação:</span>
+          <span id="decisionAction" class="decision-val">-</span>
+        </div>
+        <div class="decision-row">
+          <span class="decision-key">Confiança:</span>
+          <span id="decisionConfidence" class="decision-val">-</span>
+        </div>
+      </div>
+
+      <!-- Probability Distribution Bars -->
+      <div class="probabilities-container">
+        <div class="probabilities-title">PROBABILIDADES DAS OPÇÕES</div>
+        <div id="probabilitiesList" class="probabilities-list">
+          <!-- Gerado dinamicamente via JS -->
+          <div class="prob-row">
+            <span class="prob-name">abrir site</span>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill" style="width: 0%;"></div>
+            </div>
+            <span class="prob-val">0.00</span>
+          </div>
+          <div class="prob-row">
+            <span class="prob-name">nova aba</span>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill" style="width: 0%;"></div>
+            </div>
+            <span class="prob-val">0.00</span>
+          </div>
+          <div class="prob-row">
+            <span class="prob-name">rolar página</span>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill" style="width: 0%;"></div>
+            </div>
+            <span class="prob-val">0.00</span>
+          </div>
+          <div class="prob-row">
+            <span class="prob-name">pesquisar</span>
+            <div class="prob-bar-track">
+              <div class="prob-bar-fill" style="width: 0%;"></div>
+            </div>
+            <span class="prob-val">0.00</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Actions Log -->
+    <section class="card log-card">
+      <div class="card-header">
+        <span class="card-label">LOG DE AÇÕES</span>
+        <button id="btnClearLog" class="btn-text-action" title="Limpar histórico">Limpar</button>
+      </div>
+      <div id="logContainer" class="log-list">
+        <div class="log-empty">Nenhum evento registrado ainda.</div>
+      </div>
+    </section>
+
+    <!-- Modal de Configurações -->
+    <div id="settingsModal" class="modal-backdrop hidden">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Configurações do Jev Voice</h2>
+          <button id="btnCloseSettings" class="icon-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="cfgBackendUrl">Backend URL (V2)</label>
+            <input type="text" id="cfgBackendUrl" value="http://localhost:3001" placeholder="http://localhost:3001">
+            <small>URL do servidor Node.js que conectará ao Jev/TypeSafe AI.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="cfgMinConfidence">Confiança Mínima para Executar (%)</label>
+            <input type="number" id="cfgMinConfidence" min="50" max="100" value="70">
+            <small>Se a confiança do modelo for menor que este valor, pedirá confirmação.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="cfgEngineMode">Motor de Decisão</label>
+            <select id="cfgEngineMode">
+              <option value="local">V1 - Regras Locais (Offline)</option>
+              <option value="backend">V2 - Backend Jev / TypeSafe AI</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btnSaveSettings" class="btn-primary">Salvar</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "name": "jev-voice-server",
+  "version": "1.0.0",
+  "description": "Backend intermediário seguro para integração do Jev Voice com o modelo Jev da TypeSafe AI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "jev",
+    "typesafe-ai",
+    "voice-assistant",
+    "chrome-extension"
+  ],
+  "author": "Yago Canton",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
+  }
+}

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autorizar Microfone - Jev Voice</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0F1115;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 20px;
+    }
+    .card {
+      background: #171A21;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 36px 32px;
+      max-width: 440px;
+      text-align: center;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    }
+    .icon {
+      font-size: 52px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      color: #FF6B00;
+    }
+    p {
+      color: #9BA3AF;
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+    .btn {
+      background: linear-gradient(135deg, #FF6B00 0%, #E65100 100%);
+      color: #fff;
+      border: none;
+      padding: 14px 28px;
+      font-size: 15px;
+      font-weight: 700;
+      border-radius: 10px;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(255, 107, 0, 0.4);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(255, 107, 0, 0.6);
+    }
+    .status {
+      margin-top: 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #64748B;
+    }
+    .status.success {
+      color: #34C759;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">🎙️</div>
+    <h1>Autorizar Microfone</h1>
+    <p>O Google Chrome exige que a permissão de áudio da extensão seja concedida em uma aba aberta.<br><br>Clique no botão abaixo e selecione <strong>"Permitir"</strong> no balão do navegador.</p>
+    <button id="btnGrant" class="btn">Conceder Acesso ao Microfone</button>
+    <div id="statusText" class="status">Aguardando autorização...</div>
+  </div>
+
+  <script src="permission.js"></script>
+</body>
+</html>
