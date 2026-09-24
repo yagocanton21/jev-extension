@@ -86,17 +86,34 @@
 
       case 'CLICK_ELEMENT': {
         const target = params.target || '';
-        const element = findBestMatchingElement(target);
-        if (!element) {
-          throw new Error(`Não foi possível encontrar o elemento correspondente a: "${target}"`);
+        let element = null;
+
+        // Suporte especial para seleção ordinal (primeiro vídeo, segundo resultado, etc.)
+        const isOrdinal = target.match(/(?:primeir[oa]|1[ºª]|segund[oa]|2[ºª]|terceir[oa]|3[ºª]|quart[oa]|4[ºª]|quint[oa]|5[ºª]|ultim[oa])/i);
+        const isVideoOrResult = target.match(/(?:v[ií]deo|resultado|item|link|produto)/i);
+
+        if (isOrdinal && (isVideoOrResult || window.location.hostname.includes('youtube.com'))) {
+          element = findOrdinalElement(target);
         }
+
+        // Se não for ordinal ou não encontrou, usa a busca heurística geral
+        if (!element) {
+          element = findBestMatchingElement(target);
+        }
+
+        if (!element) {
+          throw new Error(`Não foi possível encontrar o elemento: "${target}"`);
+        }
+
         highlightElement(element);
+        element.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
         element.focus?.();
         element.click();
+
         return {
-          message: `Elemento "${target}" clicado com sucesso.`,
+          message: `Clicado em: "${target}"`,
           tagName: element.tagName,
-          text: element.innerText?.trim()?.slice(0, 30)
+          text: element.innerText?.trim()?.slice(0, 40)
         };
       }
 
@@ -231,6 +248,46 @@
     }
 
     return bestMatch;
+  }
+
+  /**
+   * Localiza elementos pela ordem na tela (ex: primeiro vídeo, segundo resultado)
+   */
+  function findOrdinalElement(targetQuery) {
+    const text = targetQuery.toLowerCase();
+    let targetIndex = 0;
+
+    if (text.includes('segund') || text.includes('2')) targetIndex = 1;
+    else if (text.includes('terceir') || text.includes('3')) targetIndex = 2;
+    else if (text.includes('quart') || text.includes('4')) targetIndex = 3;
+    else if (text.includes('quint') || text.includes('5')) targetIndex = 4;
+
+    // Se estiver no YouTube, busca os títulos dos vídeos
+    if (window.location.hostname.includes('youtube.com')) {
+      const videoLinks = Array.from(document.querySelectorAll('a#video-title, ytd-video-renderer #video-title, ytd-rich-item-renderer #video-title, a#thumbnail'))
+        .filter(el => isElementVisible(el));
+
+      if (videoLinks.length > 0) {
+        if (text.includes('ultim')) {
+          return videoLinks[videoLinks.length - 1];
+        }
+        return videoLinks[targetIndex] || videoLinks[0];
+      }
+    }
+
+    // Busca genérica para resultados de busca (Google, Mercado Livre, etc.)
+    const searchResultLinks = Array.from(document.querySelectorAll('h3, a.ui-search-link, h2 a, .result__title a'))
+      .map(el => (el.tagName === 'A' ? el : el.closest('a')) || el)
+      .filter(el => el && isElementVisible(el));
+
+    if (searchResultLinks.length > 0) {
+      if (text.includes('ultim')) {
+        return searchResultLinks[searchResultLinks.length - 1];
+      }
+      return searchResultLinks[targetIndex] || searchResultLinks[0];
+    }
+
+    return null;
   }
 
   /**

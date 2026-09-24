@@ -51,8 +51,9 @@ Você DEVE responder EXCLUSIVAMENTE em formato JSON com o seguinte schema:
 
 Regras Cruciais:
 1. CONSCIENTE DO CONTEXTO: Se o usuário estiver em um site com busca interna (ex: youtube.com, mercadolivre.com.br, amazon.com.br) e pedir para pesquisar algo (ex: "pesquisar como fazer arroz"), use SEMPRE "SEARCH_ON_PAGE" para preencher a busca do próprio site e NÃO sair dele, a menos que ele diga explicitamente "no google".
-2. LIMPEZA DE TERMO: Em qualquer busca, remova os prefixos de comando como "pesquisar", "pesquise", "procure por" do campo params.query. Exemplo: "pesquisar como fazer arroz" -> query: "como fazer arroz".
-3. Se o usuário falar apenas um termo solto (ex: "nissan gtr 2019"), use SEARCH_ON_PAGE se estiver em site com busca ou SEARCH_GOOGLE se estiver em página genérica.`;
+2. CLIQUE EM ELEMENTOS / VÍDEOS: Se o usuário disser "abrir primeiro vídeo", "abrir segundo resultado", "clicar no vídeo", "abrir link", etc., classifique SEMPRE como CLICK_ELEMENT com target "primeiro vídeo" / etc. NUNCA classifique isso como OPEN_URL! OPEN_URL é EXCLUSIVO para nomes de sites/domínios (ex: "abrir youtube", "abrir uol", "amazon.com").
+3. LIMPEZA DE TERMO: Em qualquer busca, remova os prefixos de comando como "pesquisar", "pesquise", "procure por" do campo params.query. Exemplo: "pesquisar como fazer arroz" -> query: "como fazer arroz".
+4. Se o usuário falar apenas um termo solto (ex: "nissan gtr 2019"), use SEARCH_ON_PAGE se estiver em site com busca ou SEARCH_GOOGLE se estiver em página genérica.`;
 
 /**
  * Consulta a API da OpenRouter para tomada de decisão
@@ -200,6 +201,13 @@ function simulateJevResponse(prompt, context, startTime, isFallback = false) {
     confidence = 0.95;
     probs['navegacao'] = 0.95;
     params = {};
+  } else if (normalized.match(/(?:primeir[oa]|1[ºª]|segund[oa]|2[ºª]|terceir[oa]|3[ºª]|quart[oa]|4[ºª]|quint[oa]|5[ºª]|ultim[oa]|v[ií]deo|resultado|link|bot[aã]o|item|produto)/i) && normalized.match(/(?:abrir|clicar|clique|abra|abre|tocar|selecionar)/i)) {
+    action = 'CLICK_ELEMENT';
+    const clean = prompt.replace(/^(?:abrir|abra|abre|clicar em|clique em|clicar no|clique no|selecionar)\s+(?:o|a|ao)?\s*/i, '').trim();
+    label = `clicar em "${clean}"`;
+    confidence = 0.95;
+    probs['clicar elemento'] = 0.95;
+    params = { target: clean };
   } else if (normalized.match(/^(?:abrir|abra|abre|acessar|acesse|ir para)\s+/i)) {
     action = 'OPEN_URL';
     const clean = prompt.replace(/^(?:abrir|abra|abre|acessar|acesse|ir para)\s+(?:o|a|ao)?\s*/i, '').trim();

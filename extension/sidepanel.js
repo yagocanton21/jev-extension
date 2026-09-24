@@ -460,7 +460,20 @@ function interpretCommandLocally(rawText, activeTab = null) {
     };
   }
 
-  // 8. Abrir Sites Genéricos (Mercado Livre, YouTube, Gmail, Amazon, etc.)
+  // 8. Clicar em Elementos / Vídeos da Página (ex: "abrir primeiro vídeo", "clicar no primeiro resultado")
+  if (normalized.match(/(?:primeir[oa]|1[ºª]|segund[oa]|2[ºª]|terceir[oa]|3[ºª]|quart[oa]|4[ºª]|quint[oa]|5[ºª]|ultim[oa]|v[ií]deo|resultado|link|bot[aã]o|item|produto)/i) && normalized.match(/(?:abrir|clicar|clique|abra|abre|tocar|selecionar)/i)) {
+    probs['clicar elemento'] = 0.95;
+    const cleanTarget = rawText.replace(/^(?:abrir|abra|abre|clicar em|clique em|clicar no|clique no|selecionar)\s+(?:o|a|ao)?\s*/i, '').trim();
+    return {
+      action: 'CLICK_ELEMENT',
+      label: `clicar em "${cleanTarget}"`,
+      confidence: 0.95,
+      params: { target: cleanTarget },
+      probabilities: probs
+    };
+  }
+
+  // 9. Abrir Sites Genéricos (Mercado Livre, YouTube, Gmail, Amazon, etc.)
   const openMatch = normalized.match(/^(?:abrir|abra|abre|acessar|acesse|ir para|vai para)\s+(?:o|a|ao)?\s*(.+)$/i);
   if (openMatch && openMatch[1]) {
     const rawTarget = openMatch[1].trim();
