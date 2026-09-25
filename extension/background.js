@@ -56,8 +56,16 @@ async function handleActionExecution(payload) {
       if (!activeTab || !activeTab.id) {
         throw new Error('Nenhuma aba ativa para voltar.');
       }
-      await chrome.tabs.goBack(activeTab.id);
-      return { message: 'Voltando para a página anterior.' };
+      try {
+        await chrome.tabs.goBack(activeTab.id);
+        return { message: 'Voltando para a página anterior / saindo do vídeo.' };
+      } catch (err) {
+        if (activeTab.url?.includes('youtube.com/watch')) {
+          await chrome.tabs.update(activeTab.id, { url: 'https://www.youtube.com' });
+          return { message: 'Retornando à página inicial do YouTube.' };
+        }
+        throw err;
+      }
     }
 
     case 'FORWARD': {
@@ -93,6 +101,45 @@ async function handleActionExecution(payload) {
       }
     }
 
+    case 'SWITCH_TAB': {
+      const query = (params.query || '').toLowerCase();
+      if (!query) throw new Error('Nenhum site especificado para alternar.');
+      
+      const tabs = await chrome.tabs.query({});
+      const targetTab = tabs.find(t => 
+        (t.url && t.url.toLowerCase().includes(query)) || 
+        (t.title && t.title.toLowerCase().includes(query))
+      );
+      
+      if (targetTab) {
+        await chrome.tabs.update(targetTab.id, { active: true });
+        await chrome.windows.update(targetTab.windowId, { focused: true });
+        return { message: `Alternado para a aba: ${targetTab.title || query}` };
+      } else {
+        throw new Error(`Nenhuma aba aberta encontrada para "${query}".`);
+      }
+    }
+
+    case 'NEXT_TAB': {
+      const tabs = await chrome.tabs.query({ currentWindow: true });
+      const activeTab = tabs.find(t => t.active);
+      if (!activeTab) throw new Error('Nenhuma aba ativa encontrada.');
+      const nextIndex = (activeTab.index + 1) % tabs.length;
+      const nextTab = tabs.find(t => t.index === nextIndex);
+      await chrome.tabs.update(nextTab.id, { active: true });
+      return { message: 'Avançou para a próxima aba.' };
+    }
+
+    case 'PREV_TAB': {
+      const tabs = await chrome.tabs.query({ currentWindow: true });
+      const activeTab = tabs.find(t => t.active);
+      if (!activeTab) throw new Error('Nenhuma aba ativa encontrada.');
+      const prevIndex = (activeTab.index - 1 + tabs.length) % tabs.length;
+      const prevTab = tabs.find(t => t.index === prevIndex);
+      await chrome.tabs.update(prevTab.id, { active: true });
+      return { message: 'Voltou para a aba anterior.' };
+    }
+
     case 'SEARCH_GOOGLE': {
       const query = encodeURIComponent(params.query || '');
       const searchUrl = `https://www.google.com/search?q=${query}`;
@@ -125,12 +172,17 @@ async function handleActionExecution(payload) {
       }
     }
 
-    // Ações delegadas ao Content Script (DOM / Página)
+    // Ações delegadas ao Content Script (DOM / Página / Mídia)
     case 'SCROLL_DOWN':
     case 'SCROLL_UP':
     case 'CLICK_ELEMENT':
     case 'TYPE_TEXT':
-    case 'FOCUS_ELEMENT': {
+    case 'FOCUS_ELEMENT':
+    case 'PLAY_VIDEO':
+    case 'PAUSE_VIDEO':
+    case 'TOGGLE_VIDEO':
+    case 'MUTE_VIDEO':
+    case 'FULLSCREEN_VIDEO': {
       return await sendToContentScript(action, params);
     }
 

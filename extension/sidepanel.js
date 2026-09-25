@@ -171,6 +171,10 @@ function setupSpeechRecognition() {
   };
 
   recognition.onerror = (event) => {
+    if (event.error === 'no-speech') {
+      elements.voiceStatus.textContent = 'Aguardando comando de voz...';
+      return;
+    }
     console.warn('[Jev Voice] Erro no reconhecimento:', event.error);
     if (event.error === 'not-allowed') {
       elements.voiceStatus.textContent = 'Permissão necessária. Abrindo aba...';
@@ -180,8 +184,6 @@ function setupSpeechRecognition() {
       if (chrome.tabs && chrome.tabs.create) {
         chrome.tabs.create({ url: chrome.runtime.getURL('permission.html') });
       }
-    } else if (event.error === 'no-speech') {
-      elements.voiceStatus.textContent = 'Nenhuma fala detectada.';
     } else {
       elements.voiceStatus.textContent = `Erro: ${event.error}`;
       addLog('⚠️', `Erro na captura de áudio: ${event.error}`);
@@ -241,6 +243,20 @@ function updateVoiceUI(isListening) {
 }
 
 async function handleSpokenText(rawText) {
+  // Suporte a comandos compostos sequenciais: "pesquisar X e abrir Y"
+  const compoundMatch = rawText.match(/^(pesquisar\s+.*?)\s+e\s+(?:depois\s+|em\s+seguida\s+)?(abrir\s+.*|clicar\s+.*|selecionar\s+.*)$/i);
+  if (compoundMatch) {
+    const cmd1 = compoundMatch[1].trim();
+    const cmd2 = compoundMatch[2].trim();
+    addLog('🔗', `Comando composto: [1] "${cmd1}" ➔ [2] "${cmd2}"`);
+    await handleSpokenText(cmd1);
+    addLog('⏳', 'Aguardando página carregar para executar o próximo passo...');
+    setTimeout(async () => {
+      await handleSpokenText(cmd2);
+    }, 2800);
+    return;
+  }
+
   const startTime = performance.now();
   state.stats.calls++;
   updateStatsDisplay();
@@ -343,7 +359,8 @@ function interpretCommandLocally(rawText, activeTab = null) {
     'fechar aba': 0.00,
     'rolar pagina': 0.00,
     'pesquisar': 0.00,
-    'navegacao': 0.00
+    'navegacao': 0.00,
+    'alternar aba': 0.00
   };
 
   // 1. Nova Aba
@@ -371,13 +388,58 @@ function interpretCommandLocally(rawText, activeTab = null) {
     };
   }
 
-  // 3. Voltar / Avançar
-  if (normalized.includes('voltar') || normalized.includes('volte') || normalized.includes('pagina anterior')) {
-    probs['navegacao'] = 0.96;
+  // 3. Alternar Aba (Próxima, Anterior, Específica)
+  if (normalized.includes('proxima guia') || normalized.includes('proxima aba') || normalized.includes('guia seguinte') || normalized.includes('aba seguinte')) {
+    probs['alternar aba'] = 0.98;
+    return { action: 'NEXT_TAB', label: 'próxima aba', confidence: 0.98, params: {}, probabilities: probs };
+  }
+  
+  if (normalized.includes('guia anterior') || normalized.includes('aba anterior')) {
+    probs['alternar aba'] = 0.98;
+    return { action: 'PREV_TAB', label: 'aba anterior', confidence: 0.98, params: {}, probabilities: probs };
+  }
+
+  const switchMatch = normalized.match(/^(?:ir|voltar|mudar|alternar)\s+(?:para|pra)?\s*(?:a|as)?\s*(?:aba|guia)s?\s+(?:do|da|de)?\s*(.+)$/i);
+  if (switchMatch && switchMatch[1]) {
+    const target = switchMatch[1].trim();
+    probs['alternar aba'] = 0.98;
+    return {
+      action: 'SWITCH_TAB',
+      label: `alternar para aba do ${target}`,
+      confidence: 0.98,
+      params: { query: target },
+      probabilities: probs
+    };
+  }
+
+  // Controle de reprodução de vídeo (Play / Pause / Mutar / Tela Cheia)
+  if (/^(?:dar\s+)?play(?:\s+no\s+video)?$|^(?:tocar|iniciar|reproduzir|despausar|continuar)(?:\s+o)?(?:\s+video)?$/i.test(normalized) || normalized === 'play') {
+    probs['navegacao'] = 0.99;
+    return { action: 'PLAY_VIDEO', label: 'dar play no vídeo', confidence: 0.99, params: {}, probabilities: probs };
+  }
+
+  if (/^(?:pausar|pause|parar)(?:\s+o)?(?:\s+video)?$/i.test(normalized) || normalized === 'pause' || normalized === 'pausa') {
+    probs['navegacao'] = 0.99;
+    return { action: 'PAUSE_VIDEO', label: 'pausar vídeo', confidence: 0.99, params: {}, probabilities: probs };
+  }
+
+  if (/^(?:mutar|silenciar|tirar\s+o?\s*som|desmutar)(?:\s+o)?(?:\s+video)?$/i.test(normalized) || normalized === 'mudo' || normalized === 'mutar') {
+    probs['navegacao'] = 0.99;
+    return { action: 'MUTE_VIDEO', label: 'mutar/desmutar vídeo', confidence: 0.99, params: {}, probabilities: probs };
+  }
+
+  if (/^(?:tela\s+cheia|maximizar|sair\s+da\s+tela\s+cheia)(?:\s+o)?(?:\s+video)?$/i.test(normalized) || normalized === 'tela cheia') {
+    probs['navegacao'] = 0.99;
+    return { action: 'FULLSCREEN_VIDEO', label: 'alternar tela cheia', confidence: 0.99, params: {}, probabilities: probs };
+  }
+
+  // 4. Voltar / Avançar / Fechar vídeo
+  if (normalized.includes('voltar') || normalized.includes('volte') || normalized.includes('pagina anterior') || normalized.includes('fechar video') || normalized.includes('fechar vídeo') || normalized.includes('sair do video') || normalized.includes('sair do vídeo')) {
+    probs['navegacao'] = 0.99;
     return {
       action: 'BACK',
-      label: 'voltar página',
-      confidence: 0.96,
+      label: 'fechar vídeo / voltar',
+      confidence: 0.99,
       params: {},
       probabilities: probs
     };
@@ -481,7 +543,6 @@ function interpretCommandLocally(rawText, activeTab = null) {
     probs['pesquisar'] = 0.02;
 
     const siteMap = {
-      'mercado livre': 'https://www.mercadolivre.com.br',
       'mercadolivre': 'https://www.mercadolivre.com.br',
       'youtube': 'https://www.youtube.com',
       'gmail': 'https://mail.google.com',
@@ -489,6 +550,7 @@ function interpretCommandLocally(rawText, activeTab = null) {
       'amazon': 'https://www.amazon.com.br',
       'github': 'https://github.com',
       'chatgpt': 'https://chatgpt.com',
+      'chatpt': 'https://chatgpt.com',
       'whatsapp': 'https://web.whatsapp.com',
       'instagram': 'https://www.instagram.com',
       'twitter': 'https://x.com',
@@ -497,13 +559,13 @@ function interpretCommandLocally(rawText, activeTab = null) {
       'wikipedia': 'https://pt.wikipedia.org'
     };
 
-    let targetUrl = siteMap[rawTarget];
+    const cleanSiteKey = rawTarget.toLowerCase().replace(/\s+/g, '');
+    let targetUrl = siteMap[cleanSiteKey];
     if (!targetUrl) {
       if (rawTarget.includes('.')) {
         targetUrl = rawTarget.startsWith('http') ? rawTarget : `https://${rawTarget}`;
       } else {
-        const slug = rawTarget.replace(/\s+/g, '');
-        targetUrl = `https://www.${slug}.com.br`;
+        targetUrl = `https://www.${cleanSiteKey}.com.br`;
       }
     }
 

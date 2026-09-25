@@ -10,16 +10,21 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'typesafe/jev-1.13';
 
 // Critérios para a primitiva 'Choice' do modelo JEV
 const ACTION_CRITERIA = {
-  'clicar elemento': 'quando o comando se refere a clicar, abrir ou selecionar um vídeo, resultado, link, botão ou elemento visível na tela atual',
+  'clicar elemento': 'quando o comando se refere a clicar, abrir ou selecionar um vídeo para assistir, resultado, link ou botão visível (NÃO usar para fechar vídeo, sair do vídeo ou voltar)',
   'pesquisar': 'quando o usuário quer buscar, procurar ou pesquisar um assunto, vídeo, produto ou informação',
   'abrir site': 'quando o usuário quer abrir um site externo ou domínio específico (ex: youtube, uol, github, mercadolivre)',
+  'alternar aba': 'quando o usuário quer mudar, alternar ou voltar para uma aba/janela que já está aberta com um site específico',
   'rolar para baixo': 'quando o usuário quer rolar a página para baixo ou descer a tela',
   'rolar para cima': 'quando o usuário quer rolar a página para cima ou subir a tela',
   'nova aba': 'quando o usuário quer criar ou abrir uma nova aba vazia',
-  'fechar aba': 'quando o usuário quer fechar a aba atual',
-  'voltar': 'quando o usuário quer voltar para a página anterior no histórico',
+  'fechar aba': 'quando o usuário quer fechar a aba atual do navegador',
+  'voltar': 'quando o usuário quer voltar para a página anterior no histórico, sair do vídeo atual, fechar o vídeo ou retornar ao feed',
   'avancar': 'quando o usuário quer avançar para a próxima página no histórico',
-  'atualizar': 'quando o usuário quer recarregar ou atualizar a página atual'
+  'atualizar': 'quando o usuário quer recarregar ou atualizar a página atual',
+  'reproduzir video': 'quando o usuário quer dar play, reproduzir, tocar, continuar ou despausar o vídeo',
+  'pausar video': 'quando o usuário quer pausar ou parar a reprodução do vídeo',
+  'controlar audio': 'quando o usuário quer mutar, desmutar ou silenciar o áudio do vídeo',
+  'tela cheia': 'quando o usuário quer colocar ou tirar o vídeo de tela cheia'
 };
 
 /**
@@ -91,16 +96,62 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
   const isSensitiveAnswer = jevData.answers?.is_sensitive || {};
 
   const choice = actionAnswer.choice || 'pesquisar';
-  const confidence = typeof actionAnswer.confidence === 'number' ? actionAnswer.confidence : 0.95;
-  const probabilities = actionAnswer.probabilities || { [choice]: confidence };
+  let confidence = typeof actionAnswer.confidence === 'number' ? actionAnswer.confidence : 0.95;
+  let probabilities = actionAnswer.probabilities || { [choice]: confidence };
   const isSensitive = (isSensitiveAnswer.noul || 0) > 0.65;
 
   let action = 'UNKNOWN';
   let label = choice;
   let params = {};
 
-  switch (choice) {
+  const trimmed = prompt.trim();
+  const isDirectOpenVerb = /^(?:abrir|abra|abre|clicar|clique|selecionar|tocar)\b/i.test(trimmed);
+  const isExternalSite = /^(?:abrir|abra|abre|acessar|acesse|ir para|vai para)\s+(?:o|a|ao)?\s*(youtube|mercado livre|mercadolivre|google|gmail|github|uol|amazon|maps|google maps|chat\s*gpt|chat\s*pt|whatsapp|instagram|twitter|reddit|wikipedia)/i.test(trimmed);
+
+  // Se o usuário falou expressamente "Abrir [vídeo/anúncio/título]" e NÃO é um site externo,
+  // força a ação para "clicar elemento" (evita que o modelo caia em "pesquisar" por engano)
+  let effectiveChoice = choice;
+  if (isExternalSite) {
+    effectiveChoice = 'abrir site';
+  } else if (isDirectOpenVerb && choice === 'pesquisar') {
+    effectiveChoice = 'clicar elemento';
+  }
+
+  // Interceptadores diretos para troca de guias/abas
+  if (/pr[oó]xima\s+(?:aba|guia)|(?:aba|guia)\s+seguinte/i.test(trimmed)) {
+    effectiveChoice = 'proxima aba';
+    confidence = 1.0;
+    probabilities = { 'proxima aba': 1.0 };
+  } else if (/(?:aba|guia)\s+anterior/i.test(trimmed)) {
+    effectiveChoice = 'aba anterior';
+    confidence = 1.0;
+    probabilities = { 'aba anterior': 1.0 };
+  } else if (/^(?:dar\s+)?play(?:\s+no\s+v[ií]deo)?$|^(?:tocar|iniciar|reproduzir|despausar|continuar)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(trimmed) || /^play$/i.test(trimmed)) {
+    effectiveChoice = 'reproduzir video';
+    confidence = 1.0;
+    probabilities = { 'reproduzir video': 1.0 };
+  } else if (/^(?:pausar|pause|parar)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(trimmed) || /^(?:pause|pausa)$/i.test(trimmed)) {
+    effectiveChoice = 'pausar video';
+    confidence = 1.0;
+    probabilities = { 'pausar video': 1.0 };
+  } else if (/^(?:mutar|silenciar|tirar\s+o?\s*som|desmutar)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(trimmed) || /^(?:mudo|mutar)$/i.test(trimmed)) {
+    effectiveChoice = 'controlar audio';
+    confidence = 1.0;
+    probabilities = { 'controlar audio': 1.0 };
+  } else if (/^(?:tela\s+cheia|maximizar|sair\s+da\s+tela\s+cheia)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(trimmed) || /^tela\s+cheia$/i.test(trimmed)) {
+    effectiveChoice = 'tela cheia';
+    confidence = 1.0;
+    probabilities = { 'tela cheia': 1.0 };
+  }
+
+  switch (effectiveChoice) {
     case 'clicar elemento': {
+      if (/^(?:fechar|sair\s+do|feche)\s+v[ií]deo$/i.test(prompt.trim())) {
+        action = 'BACK';
+        label = 'fechar vídeo (voltar)';
+        params = {};
+        break;
+      }
       action = 'CLICK_ELEMENT';
       const cleanTarget = prompt
         .replace(/^(?:abrir|abra|abre|clicar em|clique em|clicar no|clique no|selecionar|tocar)\s+(?:o|a|ao)?\s*/i, '')
@@ -111,10 +162,11 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
     }
 
     case 'pesquisar': {
-      const cleanQuery = prompt
+      let cleanQuery = prompt
         .replace(/^(?:pesquis[ae]|procur[ae]|busqu[ae]|pesquisar)\s+(?:por\s+)?/i, '')
         .replace(/\s+no google$/i, '')
-        .trim() || prompt;
+        .trim();
+      cleanQuery = cleanQuery.replace(/^(?:abrir|clicar)\s+/i, '').trim() || prompt;
 
       const isExplicitGoogle = prompt.toLowerCase().includes('no google');
       const isYouTube = context.url && context.url.includes('youtube.com');
@@ -140,19 +192,74 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
 
       const siteMap = {
         'youtube': 'https://www.youtube.com',
-        'mercado livre': 'https://www.mercadolivre.com.br',
+        'mercadolivre': 'https://www.mercadolivre.com.br',
         'gmail': 'https://mail.google.com',
         'google': 'https://www.google.com',
         'amazon': 'https://www.amazon.com.br',
         'github': 'https://github.com',
-        'uol': 'https://www.uol.com.br'
+        'uol': 'https://www.uol.com.br',
+        'chatgpt': 'https://chatgpt.com',
+        'chatpt': 'https://chatgpt.com',
+        'whatsapp': 'https://web.whatsapp.com',
+        'instagram': 'https://www.instagram.com',
+        'twitter': 'https://x.com',
+        'x': 'https://x.com',
+        'reddit': 'https://www.reddit.com',
+        'wikipedia': 'https://pt.wikipedia.org'
       };
 
-      const targetUrl = siteMap[siteName.toLowerCase()] || (
-        siteName.includes('.') ? (siteName.startsWith('http') ? siteName : `https://${siteName}`) : `https://www.${siteName.replace(/\s+/g, '')}.com.br`
+      const cleanSiteKey = siteName.toLowerCase().replace(/\s+/g, '');
+      const targetUrl = siteMap[cleanSiteKey] || (
+        siteName.includes('.') ? (siteName.startsWith('http') ? siteName : `https://${siteName}`) : `https://www.${cleanSiteKey}.com.br`
       );
 
       params = { url: targetUrl };
+      break;
+    }
+
+    case 'alternar aba': {
+      action = 'SWITCH_TAB';
+      const target = prompt
+        .replace(/^(?:ir|voltar|mudar|alternar)\s+(?:para|pra)?\s*(?:a|as)?\s*(?:aba|guia)s?\s+(?:do|da|de)?\s*/i, '')
+        .trim();
+      label = `alternar para aba do ${target}`;
+      params = { query: target };
+      break;
+    }
+
+    case 'proxima aba': {
+      action = 'NEXT_TAB';
+      label = 'próxima aba';
+      break;
+    }
+
+    case 'aba anterior': {
+      action = 'PREV_TAB';
+      label = 'aba anterior';
+      break;
+    }
+
+    case 'reproduzir video': {
+      action = 'PLAY_VIDEO';
+      label = 'dar play no vídeo';
+      break;
+    }
+
+    case 'pausar video': {
+      action = 'PAUSE_VIDEO';
+      label = 'pausar vídeo';
+      break;
+    }
+
+    case 'controlar audio': {
+      action = 'MUTE_VIDEO';
+      label = 'mutar/desmutar vídeo';
+      break;
+    }
+
+    case 'tela cheia': {
+      action = 'FULLSCREEN_VIDEO';
+      label = 'alternar tela cheia';
       break;
     }
 
@@ -178,7 +285,7 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
 
     case 'voltar':
       action = 'BACK';
-      label = 'voltar página';
+      label = /v[ií]deo/i.test(prompt) ? 'fechar vídeo (voltar)' : 'voltar página';
       break;
 
     case 'avancar':
