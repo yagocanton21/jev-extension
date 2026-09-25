@@ -10,9 +10,9 @@ const OPENROUTER_MODEL = process.env.OPENROUTER_MODEL || 'typesafe/jev-1.13';
 
 // Critérios para a primitiva 'Choice' do modelo JEV
 const ACTION_CRITERIA = {
-  'clicar elemento': 'quando o comando se refere a clicar, abrir ou selecionar um vídeo para assistir, resultado, link ou botão visível (NÃO usar para fechar vídeo, sair do vídeo ou voltar)',
-  'pesquisar': 'quando o usuário quer buscar, procurar ou pesquisar um assunto, vídeo, produto ou informação',
-  'abrir site': 'quando o usuário quer abrir um site externo ou domínio específico (ex: youtube, uol, github, mercadolivre)',
+  'clicar elemento': 'quando o comando se refere a clicar, abrir, entrar em ou selecionar um link, resultado de busca, vídeo, botão ou elemento interativo na página atual (ex: "clicar login", "abrir primeiro link", "entrar no resultado", "abrir segundo vídeo", "clicar no canal")',
+  'pesquisar': 'quando o usuário quer buscar ou pesquisar um assunto, vídeo, produto ou informação (ex: "pesquisar receitas", "buscar notebook")',
+  'abrir site': 'quando o usuário quer navegar digitando um endereço direto ou citando um portal famoso externo (ex: "abrir youtube", "ir para github", "acessar uol.com.br", "abrir mercadolivre")',
   'alternar aba': 'quando o usuário quer mudar, alternar ou voltar para uma aba/janela que já está aberta com um site específico',
   'rolar para baixo': 'quando o usuário quer rolar a página para baixo ou descer a tela',
   'rolar para cima': 'quando o usuário quer rolar a página para cima ou subir a tela',
@@ -105,16 +105,21 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
   let params = {};
 
   const trimmed = prompt.trim();
-  const isDirectOpenVerb = /^(?:abrir|abra|abre|clicar|clique|selecionar|tocar)\b/i.test(trimmed);
-  const isExternalSite = /^(?:abrir|abra|abre|acessar|acesse|ir para|vai para)\s+(?:o|a|ao)?\s*(youtube|mercado livre|mercadolivre|google|gmail|github|uol|amazon|maps|google maps|chat\s*gpt|chat\s*pt|whatsapp|instagram|twitter|reddit|wikipedia)/i.test(trimmed);
+  const isDirectOpenVerb = /^(?:abrir|abra|abre|clicar|clique|selecionar|tocar|entrar|acessar)\b/i.test(trimmed);
+  const isExternalSite = /^(?:abrir|abra|abre|acessar|acesse|ir para|vai para)\s+(?:o|a|ao)?\s*(youtube|mercado livre|mercadolivre|google|gmail|github|uol|amazon|maps|google maps|chat\s*gpt|chat\s*pt|whatsapp|instagram|twitter|reddit|wikipedia|globo|g1|netflix|spotify|linkedin|facebook)/i.test(trimmed);
 
-  // Se o usuário falou expressamente "Abrir [vídeo/anúncio/título]" e NÃO é um site externo,
-  // força a ação para "clicar elemento" (evita que o modelo caia em "pesquisar" por engano)
+  // Se o usuário falou expressamente "Abrir [vídeo/anúncio/título/link]" e NÃO é um site externo famoso,
+  // prioriza "clicar elemento" (evita que o modelo caia em "pesquisar" ou "abrir site" sintetizando URLs falsas)
   let effectiveChoice = choice;
   if (isExternalSite) {
     effectiveChoice = 'abrir site';
-  } else if (isDirectOpenVerb && choice === 'pesquisar') {
-    effectiveChoice = 'clicar elemento';
+  } else if (isDirectOpenVerb && (choice === 'pesquisar' || choice === 'abrir site')) {
+    // Se o comando não tiver um domínio explícito (ex: ".com") e não for site famoso,
+    // significa que é para clicar no elemento/link da página
+    const hasDomain = /\.(?:com|org|net|io|ai|gov|edu|me|app|tv|br)\b/i.test(trimmed);
+    if (!hasDomain) {
+      effectiveChoice = 'clicar elemento';
+    }
   }
 
   // Interceptadores diretos para troca de guias/abas
@@ -153,8 +158,10 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
         break;
       }
       action = 'CLICK_ELEMENT';
+      // Limpa verbos de ação e preposições iniciais para isolar o alvo real
       const cleanTarget = prompt
-        .replace(/^(?:abrir|abra|abre|clicar em|clique em|clicar no|clique no|selecionar|tocar)\s+(?:o|a|ao)?\s*/i, '')
+        .replace(/^(?:abrir|abra|abre|clicar|clique|cliquei|selecionar|selecione|tocar|toque|entrar|entre|acessar|acesse)\s+(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa)?\s*/i, '')
+        .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+p[aá]gina)$/i, '')
         .trim();
       label = `clicar em "${cleanTarget || prompt}"`;
       params = { target: cleanTarget || prompt };
@@ -184,36 +191,60 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
     }
 
     case 'abrir site': {
-      action = 'OPEN_URL';
       const siteName = prompt
-        .replace(/^(?:abrir|abra|abre|acessar|acesse|ir para|vai para)\s+(?:o|a|ao)?\s*/i, '')
+        .replace(/^(?:abrir|abra|abre|acessar|acesse|ir para|vai para|entrar no|entrar na)\s+(?:o|a|ao)?\s*/i, '')
         .trim();
-      label = `abrir ${siteName}`;
 
       const siteMap = {
         'youtube': 'https://www.youtube.com',
         'mercadolivre': 'https://www.mercadolivre.com.br',
+        'mercado livre': 'https://www.mercadolivre.com.br',
         'gmail': 'https://mail.google.com',
         'google': 'https://www.google.com',
         'amazon': 'https://www.amazon.com.br',
         'github': 'https://github.com',
         'uol': 'https://www.uol.com.br',
+        'globo': 'https://www.globo.com',
+        'g1': 'https://g1.globo.com',
         'chatgpt': 'https://chatgpt.com',
         'chatpt': 'https://chatgpt.com',
+        'openai': 'https://openai.com',
         'whatsapp': 'https://web.whatsapp.com',
         'instagram': 'https://www.instagram.com',
         'twitter': 'https://x.com',
         'x': 'https://x.com',
         'reddit': 'https://www.reddit.com',
+        'netflix': 'https://www.netflix.com',
+        'spotify': 'https://open.spotify.com',
         'wikipedia': 'https://pt.wikipedia.org'
       };
 
       const cleanSiteKey = siteName.toLowerCase().replace(/\s+/g, '');
-      const targetUrl = siteMap[cleanSiteKey] || (
-        siteName.includes('.') ? (siteName.startsWith('http') ? siteName : `https://${siteName}`) : `https://www.${cleanSiteKey}.com.br`
-      );
+      const hasExplicitDomain = siteName.includes('.') && !siteName.endsWith('.');
 
-      params = { url: targetUrl };
+      if (siteMap[cleanSiteKey] || hasExplicitDomain) {
+        action = 'OPEN_URL';
+        const targetUrl = siteMap[cleanSiteKey] || (
+          siteName.startsWith('http') ? siteName : `https://${siteName}`
+        );
+        label = `abrir ${siteName}`;
+        params = { url: targetUrl };
+      } else {
+        // Se NÃO é um site famoso mapeado e NÃO tem extensão de domínio (.com, .org, etc.),
+        // NUNCA sintetiza uma URL falsa como www.nomedosite.com.br!
+        // Se estiver em uma página de resultados ou tiver contexto de página, clica no elemento correspondente
+        const isSearchOrContentPage = context.url && (context.url.includes('google.') || context.url.includes('bing.') || context.url.includes('youtube.com'));
+        if (isSearchOrContentPage) {
+          action = 'CLICK_ELEMENT';
+          label = `clicar em "${siteName}"`;
+          params = { target: siteName };
+        } else {
+          // Caso contrário, faz pesquisa no Google pelo termo
+          action = 'SEARCH_GOOGLE';
+          label = `pesquisar "${siteName}" no Google`;
+          params = { query: siteName };
+        }
+      }
       break;
     }
 

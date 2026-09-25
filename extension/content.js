@@ -105,43 +105,49 @@
       }
 
       case 'CLICK_ELEMENT': {
-        const target = params.target || '';
-        const trimmedTarget = target.trim();
+        let target = (params.target || '').trim();
 
         // Se o usuário falou para dar play, pausar, mutar ou tela cheia diretamente
-        if (/^(?:dar\s+)?play(?:\s+no\s+v[ií]deo)?$|^(?:tocar|iniciar|reproduzir|despausar|continuar)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(trimmedTarget)) {
+        if (/^(?:dar\s+)?play(?:\s+no\s+v[ií]deo)?$|^(?:tocar|iniciar|reproduzir|despausar|continuar)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(target)) {
           return handleVideoControl('play');
         }
-        if (/^(?:pausar|pause|parar)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(trimmedTarget)) {
+        if (/^(?:pausar|pause|parar)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(target)) {
           return handleVideoControl('pause');
         }
-        if (/^(?:mutar|silenciar|tirar\s+o?\s*som|desmutar)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(trimmedTarget)) {
+        if (/^(?:mutar|silenciar|tirar\s+o?\s*som|desmutar)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(target)) {
           return handleVideoControl('toggle_mute');
         }
-        if (/^(?:tela\s+cheia|maximizar|sair\s+da\s+tela\s+cheia)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(trimmedTarget)) {
+        if (/^(?:tela\s+cheia|maximizar|sair\s+da\s+tela\s+cheia)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(target)) {
           return handleVideoControl('fullscreen');
         }
 
+        // Limpa verbos de ação para isolar o que realmente deve ser clicado
+        const cleanedActionTarget = target
+          .replace(/^(?:abrir|abra|abre|clicar|clique|cliquei|selecionar|selecione|tocar|toque|entrar|entre|acessar|acesse)\s+(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa)?\s*/i, '')
+          .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+p[aá]gina)$/i, '')
+          .trim();
+
+        const searchTarget = cleanedActionTarget || target;
         let element = null;
 
-        // Suporte especial para seleção ordinal (primeiro vídeo, segundo resultado, etc.)
-        const isOrdinal = target.match(/(?:primeir[oa]|1[ºª]?|segund[oa]|2[ºª]?|terceir[oa]|3[ºª]?|quart[oa]|4[ºª]?|quint[oa]|5[ºª]?|sext[oa]|6[ºª]?|s[eé]tim[oa]|7[ºª]?|oitav[oa]|8[ºª]?|non[oa]|9[ºª]?|d[eé]cim[oa]|10[ºª]?|[uú]ltim[oa])/i);
-        const isGenericOnly = /^(?:o\s+|a\s+|o\s+primeiro\s+|a\s+primeira\s+)?(?:v[ií]deo|resultado|item|link|produto)s?$/i.test(target.trim());
+        // Suporte especial para seleção ordinal (primeiro vídeo, segundo resultado, link de baixo, etc.)
+        const isOrdinal = searchTarget.match(/(?:primeir[oa]|1[ºª]?|segund[oa]|2[ºª]?|terceir[oa]|3[ºª]?|quart[oa]|4[ºª]?|quint[oa]|5[ºª]?|sext[oa]|6[ºª]?|s[eé]tim[oa]|7[ºª]?|oitav[oa]|8[ºª]?|non[oa]|9[ºª]?|d[eé]cim[oa]|10[ºª]?|[uú]ltim[oa]|pr[oó]xim[oa]|seguinte|de\s+baixo|abaixo)/i);
+        const isGenericOnly = /^(?:o\s+|a\s+|o\s+primeiro\s+|a\s+primeira\s+)?(?:v[ií]deo|resultado|item|link|produto)s?$/i.test(searchTarget);
 
         if (isOrdinal) {
-          element = findOrdinalElement(target);
+          element = findOrdinalElement(searchTarget);
         } else if (isGenericOnly) {
-          // Se o usuário disser apenas "abrir vídeo" ou "vídeo", assume que é o primeiro
+          // Se o usuário disser apenas "abrir vídeo" ou "link", assume que é o primeiro
           element = findOrdinalElement('primeiro video');
         }
 
-        // Se não for ordinal ou se especificou o título/assunto (ex: "starlink"), busca por título/conteúdo
+        // Se não for ordinal ou se especificou o título/assunto (ex: "login openai"), busca por título/conteúdo
         if (!element) {
-          element = findBestMatchingElement(target);
+          element = findBestMatchingElement(searchTarget);
         }
 
         if (!element) {
-          throw new Error(`Não foi possível encontrar o elemento ou vídeo com: "${target}"`);
+          throw new Error(`Não foi possível encontrar o elemento ou vídeo com: "${searchTarget}"`);
         }
 
         clickElementSafely(element);
@@ -278,13 +284,80 @@
   }
 
   /**
+   * Normaliza textos removendo acentos, pontuações e unificando termos comuns falados
+   * (ex: "log in" -> "login", "open ai" -> "openai", "chat gpt" -> "chatgpt")
+   */
+  function normalizeText(text) {
+    if (!text) return '';
+    return text
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+      .toLowerCase()
+      .replace(/\blog\s+in\b/g, 'login') // "log in" -> "login"
+      .replace(/\bopen\s+ai\b/g, 'openai') // "open ai" -> "openai"
+      .replace(/\bchat\s+gpt\b/g, 'chatgpt') // "chat gpt" -> "chatgpt"
+      .replace(/\byou\s+tube\b/g, 'youtube') // "you tube" -> "youtube"
+      .replace(/\bmercado\s+livre\b/g, 'mercadolivre') // "mercado livre" -> "mercadolivre"
+      .replace(/[^a-z0-9\s]/g, ' ') // Remove pontuações
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Distância de Levenshtein para tolerar pequenos erros de transcrição de voz
+   * (ex: "opeai" vs "openai" -> distância 1)
+   */
+  function levenshteinDistance(a, b) {
+    if (a === b) return 0;
+    if (!a.length) return b.length;
+    if (!b.length) return a.length;
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        if (b.charAt(i - 1) === a.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1, // substituição
+            matrix[i][j - 1] + 1,     // inserção
+            matrix[i - 1][j] + 1      // deleção
+          );
+        }
+      }
+    }
+    return matrix[b.length][a.length];
+  }
+
+  /**
+   * Verifica se uma palavra da query corresponde a alguma palavra do elemento
+   * suportando correspondência exata, prefixo e distância de Levenshtein
+   */
+  function wordMatchesFuzzy(queryWord, targetWords) {
+    if (!queryWord) return false;
+    for (const tw of targetWords) {
+      if (!tw) continue;
+      if (tw === queryWord) return true;
+      if (queryWord.length >= 4 && (tw.startsWith(queryWord) || queryWord.startsWith(tw))) return true;
+      const maxDist = queryWord.length >= 6 ? 2 : (queryWord.length >= 4 ? 1 : 0);
+      if (maxDist > 0 && Math.abs(tw.length - queryWord.length) <= maxDist) {
+        if (levenshteinDistance(queryWord, tw) <= maxDist) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
    * Converte texto ordinal em índice numérico (0-based)
    */
   function parseOrdinalIndex(text) {
     const t = text.toLowerCase();
     if (t.includes('ultim') || t.includes('últim')) return -1;
     if (t.includes('primeir') || t.match(/\b1[ºª]?\b/)) return 0;
-    if (t.includes('segund') || t.match(/\b2[ºª]?\b/)) return 1;
+    if (t.includes('segund') || t.match(/\b2[ºª]?\b/) || t.includes('baixo') || t.includes('proxim') || t.includes('próxim') || t.includes('seguinte')) return 1;
     if (t.includes('terceir') || t.match(/\b3[ºª]?\b/)) return 2;
     if (t.includes('quart') || t.match(/\b4[ºª]?\b/)) return 3;
     if (t.includes('quint') || t.match(/\b5[ºª]?\b/)) return 4;
@@ -297,25 +370,27 @@
   }
 
   /**
-   * Localiza de forma heurística o elemento interativo mais condizente com o texto falado
+   * Localiza de forma semântica e heurística o elemento interativo mais condizente com a fala
    */
   function findBestMatchingElement(query, tagFilters = null) {
     if (!query) return null;
-    const normalizedQuery = query.toLowerCase().trim();
 
-    // Limpa prefixos e preposições faladas que não fazem parte do título
-    // Ex: "abrir vídeo com o título vale a pena starlink" -> "vale a pena starlink"
+    const normalizedQuery = normalizeText(query);
+    if (!normalizedQuery) return null;
+
+    // Remove prefixos falados de comandos ou contexto
     const cleanedQuery = normalizedQuery
-      .replace(/^(?:o\s+|a\s+|o\s+v[ií]deo\s+|v[ií]deo\s+|video\s+|com\s+o\s+t[ií]tulo\s+|t[ií]tulo\s+|chamado\s+|sobre\s+|da\s+|do\s+|de\s+)+/i, '')
-      .replace(/(?:\s+no\s+youtube|\s+no\s+google)$/i, '')
+      .replace(/^(?:o\s+|a\s+|o\s+video\s+|video\s+|com\s+o\s+titulo\s+|titulo\s+|chamado\s+|sobre\s+|da\s+|do\s+|de\s+|link\s+|resultado\s+)+/i, '')
+      .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+pagina)$/i, '')
       .trim();
 
-    // Palavras-chave individuais relevantes (tamanho > 2 e não sendo conectivos comuns)
+    const effectiveQuery = cleanedQuery || normalizedQuery;
+
+    // Palavras-chave individuais da busca
     const stopWords = new Set(['com', 'uma', 'uns', 'umas', 'para', 'pra', 'por', 'sobre', 'que', 'dos', 'das', 'seu', 'sua', 'ele', 'ela']);
-    const searchTerms = (cleanedQuery || normalizedQuery)
+    const queryTokens = effectiveQuery
       .split(/\s+/)
-      .map(w => w.replace(/[^\w\d]/g, '').trim())
-      .filter(w => w.length > 2 && !stopWords.has(w));
+      .filter(w => w.length >= 2 && !stopWords.has(w));
 
     const selector = tagFilters
       ? tagFilters.join(', ')
@@ -334,63 +409,64 @@
         continue;
       }
 
-      const innerText = (el.innerText || el.textContent || '').toLowerCase().trim();
-      const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase().trim();
-      const placeholder = (el.getAttribute('placeholder') || '').toLowerCase().trim();
-      const title = (el.getAttribute('title') || '').toLowerCase().trim();
-      const name = (el.getAttribute('name') || '').toLowerCase().trim();
-      const id = (el.id || '').toLowerCase().trim();
+      const rawText = el.innerText || el.textContent || '';
+      const normText = normalizeText(rawText);
+      const normAria = normalizeText(el.getAttribute('aria-label') || '');
+      const normTitle = normalizeText(el.getAttribute('title') || '');
+      const normPlaceholder = normalizeText(el.getAttribute('placeholder') || '');
+      const normHref = normalizeText(el.getAttribute('href') || el.href || '');
+
+      const targetWords = (normText + ' ' + normAria + ' ' + normTitle)
+        .split(/\s+/)
+        .filter(w => w.length >= 2);
 
       let score = 0;
 
-      // 1. Correspondência exata da query inteira
-      if (innerText === normalizedQuery || ariaLabel === normalizedQuery || innerText === cleanedQuery) {
+      // 1. Correspondência exata da query inteira normalizada
+      if (normText === effectiveQuery || normAria === effectiveQuery) {
         score = 100;
-      } else if (placeholder === normalizedQuery || title === normalizedQuery) {
+      } else if (normTitle === effectiveQuery || normPlaceholder === effectiveQuery) {
         score = 95;
       }
       // 2. Contém a query inteira
-      else if (cleanedQuery && innerText.includes(cleanedQuery)) {
+      else if (normText.includes(effectiveQuery) || normAria.includes(effectiveQuery)) {
         score = 90;
-      } else if (innerText.includes(normalizedQuery)) {
+      } else if (normTitle.includes(effectiveQuery)) {
         score = 85;
-      } else if (cleanedQuery && ariaLabel.includes(cleanedQuery)) {
-        score = 80;
       }
-      // 3. Correspondência por palavras-chave (ex: "vale", "pena", "comprar", "starlink", "2026")
-      else if (searchTerms.length > 0) {
+      // 3. Correspondência por palavras-chave com tolerância fuzzy (Levenshtein)
+      else if (queryTokens.length > 0) {
         let matchedCount = 0;
-        for (const term of searchTerms) {
-          if (innerText.includes(term) || ariaLabel.includes(term)) {
+        for (const token of queryTokens) {
+          if (wordMatchesFuzzy(token, targetWords) || (token.length >= 4 && normHref.includes(token))) {
             matchedCount++;
           }
         }
+
         if (matchedCount > 0) {
-          const ratio = matchedCount / searchTerms.length;
-          // Se encontrou mais de 40% das palavras chave ou se encontrou palavra rara (>5 letras)
-          if (ratio >= 0.4 || searchTerms.some(t => t.length >= 6 && (innerText.includes(t) || ariaLabel.includes(t)))) {
+          const ratio = matchedCount / queryTokens.length;
+          // Se encontrou todas as palavras ou pelo menos 45% com peso em palavras longas
+          if (ratio >= 0.45 || (matchedCount >= 1 && queryTokens.some(t => t.length >= 5 && wordMatchesFuzzy(t, targetWords)))) {
             score = Math.round(50 + ratio * 35);
           }
         }
       }
 
-      // Bônus de Especificidade: Elementos clicáveis diretos (<a>, <button>, role="link") têm prioridade
+      // Bônus para elementos clicáveis diretos (<a>, <button>, role="link")
       const isDirectInteractive = el.tagName === 'A' || el.tagName === 'BUTTON' || el.getAttribute('role') === 'link' || el.getAttribute('role') === 'button';
       if (isDirectInteractive) {
         score += 15;
       }
 
-      // Penalidade de Tamanho: Evita que caixas, tabelas ou containers gigantes que englobam a página vençam links específicos
-      if (score > 0 && innerText.length > 0) {
-        const refLen = (cleanedQuery || normalizedQuery).length;
-        const extraChars = Math.max(0, innerText.length - refLen);
-        score -= Math.min(35, Math.floor(extraChars / 6));
+      // Penalidade de tamanho para evitar selecionar blocos inteiros da página
+      if (score > 0 && normText.length > 0) {
+        const extraChars = Math.max(0, normText.length - effectiveQuery.length);
+        score -= Math.min(30, Math.floor(extraChars / 8));
       }
 
       if (score > highestScore && score >= 35) {
         highestScore = score;
 
-        // Se for um container de vídeo do YouTube, pega o link principal clicável dele
         if (el.tagName && el.tagName.toLowerCase().startsWith('ytd-')) {
           bestMatch = el.querySelector('a#video-title-link, a#video-title, a#thumbnail, a[href*="/watch"], a[href*="/live"]') || el.querySelector('a') || el;
         } else {
