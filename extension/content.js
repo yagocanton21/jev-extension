@@ -24,6 +24,27 @@
   });
 
   /**
+   * Fecha popups e caixas de sugestões flutuantes (como o autocomplete do YouTube)
+   */
+  function closeSearchDropdowns() {
+    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+      document.activeElement.blur();
+    }
+    const dropSelectors = [
+      '.sbdd_a', '.sbdd_b', '.sbsb_a', '#search-suggestions',
+      'div[role="listbox"]', '.gstl_50', 'ul[role="listbox"]',
+      'ytd-searchbox .sbdd_a', 'ytd-searchbox .sbdd_b'
+    ];
+    for (const sel of dropSelectors) {
+      document.querySelectorAll(sel).forEach(el => {
+        el.style.display = 'none';
+      });
+    }
+    // Dispara ESC para fechar overlays e sugestões do YouTube
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+  }
+
+  /**
    * Executa a ação solicitada no DOM
    */
   function executePageAction(action, params) {
@@ -44,15 +65,35 @@
         const query = params.query || '';
         if (!query) throw new Error('Termo de busca vazio.');
 
-        // Busca o campo de pesquisa mais compatível da página
+        closeSearchDropdowns();
+
+        // 1. YouTube: Realiza busca diretamente via URL para evitar dropdown de sugestões travado na tela
+        if (window.location.hostname.includes('youtube.com')) {
+          const searchInput = document.querySelector('input#search, input[name="search_query"]');
+          if (searchInput) {
+            searchInput.value = query;
+            searchInput.blur();
+          }
+          closeSearchDropdowns();
+          const targetUrl = `/results?search_query=${encodeURIComponent(query)}`;
+          window.location.href = targetUrl;
+          return { message: `Buscando "${query}" no YouTube.` };
+        }
+
+        // 2. Mercado Livre: Navegação direta para os resultados de busca
+        if (window.location.hostname.includes('mercadolivre.com')) {
+          const cleanQuery = encodeURIComponent(query.replace(/\s+/g, '-'));
+          window.location.href = `https://lista.mercadolivre.com.br/${cleanQuery}`;
+          return { message: `Buscando "${query}" no Mercado Livre.` };
+        }
+
+        // 3. Demais páginas genéricas
         const searchInput = findSearchInputElement();
         if (!searchInput) {
           throw new Error('Nenhum campo de busca encontrado nesta página.');
         }
 
         highlightElement(searchInput);
-        searchInput.focus();
-
         if (searchInput.isContentEditable) {
           searchInput.textContent = query;
         } else {
@@ -62,24 +103,19 @@
         searchInput.dispatchEvent(new Event('input', { bubbles: true }));
         searchInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-        // Tenta submeter pressionando Enter
-        const enterDown = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
-        const enterUp = new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
-        searchInput.dispatchEvent(enterDown);
-        searchInput.dispatchEvent(enterUp);
+        const form = searchInput.closest('form');
+        const submitBtn = form?.querySelector('button[type="submit"], input[type="submit"], button#search-icon-legacy, button[aria-label*="pesquis" i], button[aria-label*="search" i]');
+        if (submitBtn) {
+          submitBtn.click();
+        } else if (form) {
+          form.dispatchEvent(new Event('submit', { bubbles: true }));
+          if (typeof form.submit === 'function') form.submit();
+        } else {
+          const enterDown = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true });
+          searchInput.dispatchEvent(enterDown);
+        }
 
-        // Se o Enter não submeteu o form após 300ms, tenta clicar no botão de lupa/submit do form
-        setTimeout(() => {
-          const form = searchInput.closest('form');
-          if (form) {
-            const submitBtn = form.querySelector('button[type="submit"], input[type="submit"], button[aria-label*="pesquis" i], button[aria-label*="search" i], button[id*="search" i]');
-            if (submitBtn) {
-              submitBtn.click();
-            } else {
-              form.dispatchEvent(new Event('submit', { bubbles: true }));
-            }
-          }
-        }, 300);
+        setTimeout(() => closeSearchDropdowns(), 200);
 
         return { message: `Pesquisa por "${query}" executada diretamente na página atual.` };
       }
@@ -105,6 +141,7 @@
       }
 
       case 'CLICK_ELEMENT': {
+        closeSearchDropdowns();
         let target = (params.target || '').trim();
 
         // Se o usuário falou para dar play, pausar, mutar ou tela cheia diretamente
@@ -465,10 +502,15 @@
       }
 
       if (score > highestScore && score >= 35) {
+        // Se estiver em resultados de busca do YouTube, ignora elementos em cache da home
+        if (window.location.hostname.includes('youtube.com') && (window.location.pathname.includes('/results') || window.location.search.includes('search_query=')) && el.closest('ytd-browse')) {
+          continue;
+        }
+
         highestScore = score;
 
         if (el.tagName && el.tagName.toLowerCase().startsWith('ytd-')) {
-          bestMatch = el.querySelector('a#video-title-link, a#video-title, a#thumbnail, a[href*="/watch"], a[href*="/live"]') || el.querySelector('a') || el;
+          bestMatch = el.querySelector('a#video-title, a#video-title-link, a#thumbnail, a[href*="/watch"], a[href*="/live"]') || el.querySelector('a') || el;
         } else {
           bestMatch = el.tagName === 'A' ? el : (el.closest('a') || el);
         }
@@ -484,29 +526,43 @@
   function findOrdinalElement(targetQuery) {
     const targetIndex = parseOrdinalIndex(targetQuery);
 
-    // Se estiver no YouTube, busca os vídeos na página atual (Home, Busca ou Lateral de recomendados)
+    // Se estiver no YouTube, busca os vídeos na página atual (Busca, Player ou Home)
     if (window.location.hostname.includes('youtube.com')) {
+      closeSearchDropdowns();
+      const isSearchResults = window.location.pathname.includes('/results') || window.location.search.includes('search_query=');
       const isWatchPage = window.location.pathname.includes('/watch');
 
-      // Ordem de preferência de seletores dependendo se está no player ou na página principal
-      const selectors = isWatchPage
-        ? [
-            'ytd-compact-video-renderer',
-            'ytd-rich-item-renderer:not([is-slim-media])',
-            'ytd-video-renderer'
-          ]
-        : [
-            'ytd-rich-item-renderer:not([is-slim-media])',
-            'ytd-video-renderer',
-            'ytd-compact-video-renderer',
-            'ytd-grid-video-renderer'
-          ];
+      // Seletores estritamente priorizados pelo contexto da página atual:
+      let selectors = [];
+      if (isSearchResults) {
+        // Na busca do YouTube: resultados de vídeo da busca (ignora a home em cache no DOM)
+        selectors = [
+          'ytd-search ytd-video-renderer',
+          'ytd-video-renderer'
+        ];
+      } else if (isWatchPage) {
+        // No player de vídeo: vídeos recomendados na lateral
+        selectors = [
+          'ytd-watch-next-secondary-results-renderer ytd-compact-video-renderer',
+          'ytd-compact-video-renderer',
+          'ytd-video-renderer'
+        ];
+      } else {
+        // Na Home ou Feeds: vídeos principais
+        selectors = [
+          'ytd-browse ytd-rich-item-renderer:not([is-slim-media])',
+          'ytd-rich-item-renderer:not([is-slim-media])',
+          'ytd-grid-video-renderer'
+        ];
+      }
 
       let videoContainers = [];
       for (const sel of selectors) {
         const found = Array.from(document.querySelectorAll(sel)).filter(container => {
           // Ignora qualquer container que esteja dentro da barra lateral de navegação (guide)
           if (container.closest('ytd-guide-renderer, #guide, #guide-content, ytd-mini-guide-renderer')) return false;
+          // Se estiver na página de busca, NUNCA selecione vídeos da home do YouTube (<ytd-browse>)
+          if (isSearchResults && container.closest('ytd-browse')) return false;
           return isElementVisible(container);
         });
 
@@ -522,7 +578,7 @@
           : (videoContainers[targetIndex] || videoContainers[0]);
 
         if (targetContainer) {
-          const clickable = targetContainer.querySelector('a#video-title-link, a#video-title, a#thumbnail, a[href*="/watch"], a[href*="/live"], a[href*="/shorts"]') || targetContainer.querySelector('a');
+          const clickable = targetContainer.querySelector('a#video-title, a#video-title-link, a#thumbnail, a[href*="/watch"], a[href*="/live"], a[href*="/shorts"]') || targetContainer.querySelector('a');
           if (clickable) return clickable;
           return targetContainer;
         }
