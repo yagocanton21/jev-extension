@@ -36,7 +36,11 @@ async function classifyIntentWithJev(prompt, context = {}) {
   const stateDescription = [
     `Comando do usuário: "${prompt}"`,
     context.url ? `URL da página atual: ${context.url}` : '',
-    context.title ? `Título da página: ${context.title}` : ''
+    context.title ? `Título da página: ${context.title}` : '',
+    context.pageType ? `Tipo de página: ${context.pageType}` : '',
+    context.hasVideo ? `Possui reprodutor de vídeo: Sim` : '',
+    context.hasSearchInput ? `Possui campo de busca interno: Sim` : '',
+    context.visibleOptions ? `Opções visíveis na tela: ${context.visibleOptions}` : ''
   ].filter(Boolean).join('\n');
 
   const requestBody = {

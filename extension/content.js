@@ -10,8 +10,18 @@
 
   console.log('[Jev Voice] Content script ativo na página:', window.location.href);
 
-  // Escuta comandos enviados pelo Background Service Worker
+  // Escuta comandos enviados pelo Side Panel ou Background Service Worker
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === 'GET_PAGE_CONTEXT') {
+      try {
+        const pageCtx = getPageContext();
+        sendResponse({ success: true, context: pageCtx });
+      } catch (err) {
+        sendResponse({ success: false, context: {} });
+      }
+      return false;
+    }
+
     if (request.type !== 'PAGE_ACTION') return;
 
     try {
@@ -22,6 +32,43 @@
       sendResponse({ success: false, error: err.message || 'Erro no content script' });
     }
   });
+
+  /**
+   * Coleta contexto semântico instantâneo da página para guiar o raciocínio da IA do Jev
+   */
+  function getPageContext() {
+    const video = document.querySelector('video');
+    const hasVideo = Boolean(video && isElementVisible(video));
+    const searchInput = findSearchInputElement();
+    const hasSearchInput = Boolean(searchInput);
+
+    // Identifica o tipo semântico da página dinamicamente
+    let pageType = 'geral';
+    const url = window.location.href.toLowerCase();
+    if (url.includes('/search') || url.includes('/results') || url.includes('?q=') || url.includes('?search=')) {
+      pageType = 'resultados de busca';
+    } else if (hasVideo && (url.includes('/watch') || url.includes('/video') || url.includes('/live') || url.includes('play'))) {
+      pageType = 'reprodução de vídeo / mídia';
+    } else if (document.querySelector('form[action*="cart"], button[id*="cart"], button[aria-label*="carrinho" i], [class*="product-price"], [class*="add-to-cart"]')) {
+      pageType = 'e-commerce / produto';
+    } else if (document.querySelector('article, main p, .post-content, .article-body')) {
+      pageType = 'artigo / leitura';
+    }
+
+    // Coleta até 5 elementos de ação visíveis principais
+    const prominentElements = Array.from(document.querySelectorAll('h1, h2, button, a[role="button"], input[type="submit"]'))
+      .filter(el => isElementVisible(el))
+      .map(el => (el.innerText || el.value || el.getAttribute('aria-label') || '').trim())
+      .filter(text => text.length >= 3 && text.length <= 40)
+      .slice(0, 5);
+
+    return {
+      hasVideo,
+      hasSearchInput,
+      pageType,
+      visibleOptions: prominentElements.join(', ')
+    };
+  }
 
   /**
    * Fecha popups e caixas de sugestões flutuantes (como o autocomplete do YouTube)
@@ -646,55 +693,118 @@
     }
 
     // ==========================================
-    // 4. ADAPTADOR UNIVERSAL / GENÉRICO
+    // 4. ADAPTADOR UNIVERSAL PARA QUALQUER SITE DO MUNDO
     // ==========================================
-    const searchResultLinks = Array.from(document.querySelectorAll('h3 a, a.ui-search-link, h2 a, .result__title a, h3, h2'))
+    // Busca blocos ou cards de conteúdo repetitivo (artigos, produtos, posts, resultados, tweets, etc.)
+    const cardSelectors = [
+      'article',
+      '[class*="product"]',
+      '[class*="item"]',
+      '[class*="result"]',
+      '[class*="card"]',
+      '[class*="video"]',
+      '[class*="post"]',
+      '[class*="entry"]',
+      '[role="article"]',
+      '[role="listitem"]',
+      'li:has(a[href])',
+      'tr:has(a[href])'
+    ];
+
+    const cards = Array.from(document.querySelectorAll(cardSelectors.join(', '))).filter(el => {
+      // Ignora elementos em cabeçalhos, rodapés ou menus laterais
+      if (el.closest('nav, aside, #guide, header, footer, [role="navigation"], .sidebar, [class*="sidebar"]')) return false;
+      return isElementVisible(el);
+    });
+
+    if (cards.length > 0) {
+      // Ordena visualmente os cards do topo para baixo da página
+      cards.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
+
+      const targetCard = targetIndex === -1 ? cards[cards.length - 1] : (cards[targetIndex] || cards[0]);
+      if (targetCard) {
+        // Encontra o link de título principal dentro do card
+        const link = targetCard.querySelector('h1 a, h2 a, h3 a, h4 a, a[class*="title"], a.title, a[href*="/p/"], a[href*="/dp/"], a[href]:not([href^="#"]):not([href^="javascript"])') || targetCard.querySelector('a');
+        if (link) return link;
+        return targetCard;
+      }
+    }
+
+    // Fallback universal: links de cabeçalhos ou links principais de conteúdo
+    const genericLinks = Array.from(document.querySelectorAll('main h1 a, main h2 a, main h3 a, h1 a, h2 a, h3 a, .content a, #content a, a.result__title, h2, h3'))
       .filter(el => {
-        // Ignora qualquer cabeçalho ou link de menus laterais, filtros, navegação, rodapé
-        if (el.closest('nav, aside, #guide, ytd-guide-renderer, ytd-mini-guide-renderer, #sidebar, .sidebar, [class*="sidebar"], [class*="filter"], header, footer, [role="navigation"]')) return false;
+        if (el.closest('nav, aside, header, footer, [role="navigation"], .sidebar')) return false;
         return isElementVisible(el);
       })
       .map(el => (el.tagName === 'A' ? el : el.closest('a')) || el)
       .filter(el => el && isElementVisible(el));
 
-    if (searchResultLinks.length > 0) {
+    if (genericLinks.length > 0) {
+      genericLinks.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
       return targetIndex === -1
-        ? searchResultLinks[searchResultLinks.length - 1]
-        : (searchResultLinks[targetIndex] || searchResultLinks[0]);
+        ? genericLinks[genericLinks.length - 1]
+        : (genericLinks[targetIndex] || genericLinks[0]);
     }
 
     return null;
   }
 
   /**
-   * Identifica o campo de busca mais provável da página atual (YouTube, Mercado Livre, etc.)
+   * Identifica de forma heurística o campo de busca mais provável em QUALQUER site do mundo
    */
   function findSearchInputElement() {
-    // 1. Seletores clássicos de busca
-    const selectors = [
-      'input[name="search_query"]', // YouTube
-      'input[id="search"]',         // YouTube desktop
-      'input[name="as_word"]',      // Mercado Livre
-      'input[type="search"]',
-      'input[aria-label*="pesquis" i]',
-      'input[aria-label*="search" i]',
-      'input[placeholder*="pesquis" i]',
-      'input[placeholder*="buscar" i]',
-      'input[placeholder*="search" i]',
-      'input[name="q"]',
-      'input[name="query"]'
-    ];
+    // 1. Inputs com tipo explícito search
+    const typeSearch = document.querySelector('input[type="search"]');
+    if (typeSearch && isElementVisible(typeSearch)) return typeSearch;
 
-    for (const sel of selectors) {
-      const el = document.querySelector(sel);
-      if (el && isElementVisible(el)) {
-        return el;
+    // 2. Inputs dentro de contêineres com role="search" ou form de busca
+    const searchRole = document.querySelector('[role="search"] input:not([type="hidden"]), form[action*="search" i] input:not([type="hidden"])');
+    if (searchRole && isElementVisible(searchRole)) return searchRole;
+
+    // 3. Avaliação heurística pontuada de todos os inputs da página
+    const candidates = Array.from(document.querySelectorAll('input:not([type="hidden"]):not([type="password"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="file"])'))
+      .filter(el => isElementVisible(el));
+
+    let bestInput = null;
+    let highestScore = -1;
+
+    for (const el of candidates) {
+      let score = 0;
+      const name = (el.getAttribute('name') || '').toLowerCase();
+      const id = (el.id || '').toLowerCase();
+      const placeholder = (el.getAttribute('placeholder') || '').toLowerCase();
+      const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+      const cls = (el.className || '').toLowerCase();
+
+      // Atributos clássicos de busca em vários idiomas
+      const searchTerms = ['search', 'query', 'busca', 'pesquis', 'procurar', 'find', 'keyword', 'encontre'];
+      for (const t of searchTerms) {
+        if (name.includes(t)) score += 35;
+        if (id.includes(t)) score += 30;
+        if (placeholder.includes(t)) score += 35;
+        if (ariaLabel.includes(t)) score += 30;
+        if (cls.includes(t)) score += 15;
+      }
+
+      if (name === 'q' || name === 's') score += 30;
+
+      // Posição no topo da página (header ou nav)
+      if (el.closest('header, nav, [role="banner"], [id*="header"]')) {
+        score += 20;
+      }
+
+      const rect = el.getBoundingClientRect();
+      if (rect.top <= 200) {
+        score += 10;
+      }
+
+      if (score > highestScore && score >= 25) {
+        highestScore = score;
+        bestInput = el;
       }
     }
 
-    // 2. Fallback: Primeiro input de texto visível na tela
-    const allInputs = Array.from(document.querySelectorAll('input[type="text"], input:not([type])'));
-    return allInputs.find(el => isElementVisible(el)) || null;
+    return bestInput || candidates[0] || null;
   }
 
   /**
@@ -714,20 +824,32 @@
   }
 
   /**
-   * Controla a reprodução de vídeo na página (YouTube, HTML5 video, etc.)
+   * Identifica o elemento de vídeo ativo ou de maior destaque na página
+   */
+  function getActiveVideoElement() {
+    const videos = Array.from(document.querySelectorAll('video')).filter(v => isElementVisible(v));
+    if (videos.length === 0) return null;
+    const playing = videos.find(v => !v.paused);
+    if (playing) return playing;
+    return videos.sort((a, b) => {
+      const rectA = a.getBoundingClientRect();
+      const rectB = b.getBoundingClientRect();
+      return (rectB.width * rectB.height) - (rectA.width * rectA.height);
+    })[0];
+  }
+
+  /**
+   * Controla a reprodução de vídeo na página (Universal: YouTube, Netflix, Vimeo, HTML5 Video, etc.)
    */
   function handleVideoControl(command) {
-    const video = document.querySelector('video');
+    const video = getActiveVideoElement();
     const ytPlayBtn = document.querySelector('.ytp-play-button');
 
     if (command === 'play') {
       if (video) {
         if (video.paused) {
-          if (ytPlayBtn) {
-            ytPlayBtn.click();
-          } else {
-            video.play().catch(() => {});
-          }
+          if (ytPlayBtn) ytPlayBtn.click();
+          else video.play().catch(() => {});
         }
         return { message: 'Vídeo em reprodução (Play).' };
       }
@@ -740,11 +862,8 @@
     if (command === 'pause') {
       if (video) {
         if (!video.paused) {
-          if (ytPlayBtn) {
-            ytPlayBtn.click();
-          } else {
-            video.pause();
-          }
+          if (ytPlayBtn) ytPlayBtn.click();
+          else video.pause();
         }
         return { message: 'Vídeo pausado.' };
       }
@@ -787,6 +906,7 @@
       if (video) {
         if (!document.fullscreenElement) {
           if (video.requestFullscreen) video.requestFullscreen().catch(() => {});
+          else if (video.webkitRequestFullscreen) video.webkitRequestFullscreen().catch(() => {});
         } else {
           if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
         }
@@ -794,13 +914,13 @@
       }
     }
 
-    // Fallback para players genéricos na web
+    // Fallback para players com botões genéricos de play/pause
     const fallbackBtn = document.querySelector('button[aria-label*="Play" i], button[aria-label*="Reproduzir" i], button[aria-label*="Pausar" i], button[aria-label*="Pause" i]');
     if (fallbackBtn) {
       fallbackBtn.click();
       return { message: 'Controle de reprodução acionado.' };
     }
 
-    throw new Error('Nenhum vídeo em reprodução encontrado nesta página.');
+    return { message: 'Nenhum reprodutor de vídeo ativo encontrado nesta página.' };
   }
 })();

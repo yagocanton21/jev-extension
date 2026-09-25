@@ -263,17 +263,28 @@ async function handleSpokenText(rawText) {
 
   addLog('🎤', `"${rawText}"`, 'voice');
 
-  // Obtém contexto da aba ativa
+  // Obtém contexto da aba ativa e estrutura semântica da página
   let activeTab = null;
+  let pageContext = {};
   if (chrome.tabs && chrome.tabs.query) {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     activeTab = tab || null;
+    if (activeTab && activeTab.id && !activeTab.url?.startsWith('chrome://')) {
+      try {
+        const ctxRes = await chrome.tabs.sendMessage(activeTab.id, { type: 'GET_PAGE_CONTEXT' });
+        if (ctxRes && ctxRes.success && ctxRes.context) {
+          pageContext = ctxRes.context;
+        }
+      } catch {
+        // Ignora caso a página ainda esteja carregando
+      }
+    }
   }
 
   let decisionResult = null;
 
   if (state.settings.engineMode === 'backend') {
-    decisionResult = await callJevBackend(rawText, activeTab);
+    decisionResult = await callJevBackend(rawText, activeTab, pageContext);
   } else {
     decisionResult = interpretCommandLocally(rawText, activeTab);
   }
@@ -607,19 +618,14 @@ function interpretCommandLocally(rawText, activeTab = null) {
 /**
  * Consulta o Backend Local que se comunica com o Jev / TypeSafe AI
  */
-async function callJevBackend(text) {
+async function callJevBackend(text, activeTab = null, pageContext = {}) {
   try {
-    // Coleta contexto da aba ativa para enriquecer a decisão do Jev
-    let context = {};
-    if (chrome.tabs && chrome.tabs.query) {
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (activeTab) {
-        context = {
-          url: activeTab.url || '',
-          title: activeTab.title || ''
-        };
-      }
-    }
+    // Coleta contexto da aba ativa e estrutura da página para enriquecer a decisão do Jev
+    const context = {
+      url: activeTab?.url || '',
+      title: activeTab?.title || '',
+      ...pageContext
+    };
 
     const response = await fetch(`${state.settings.backendUrl}/api/decide`, {
       method: 'POST',
