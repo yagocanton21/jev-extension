@@ -207,16 +207,16 @@
 
         // Limpa verbos de ação e qualificadores de entidade para isolar o que realmente deve ser clicado
         const cleanedActionTarget = target
-          .replace(/^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\s+(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa|para|pra|pro)?\s*/i, '')
-          .replace(/^(?:o\s+|a\s+|os\s+|as\s+|um\s+|uma\s+)?(?:an[uú]ncio|an[uú]ncia|anunc|produto|item|op[cç][aã]o|valor|pre[cç]o|link|resultado|card|bot[aã]o)\s+(?:de|do|da|dos|das|com|por|custando|no\s+valor\s+de|no\s+pre[cç]o\s+de|chamado|com\s+o\s+t[ií]tulo|sobre)?\s*/i, '')
+          .replace(/^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\b\s*(?:(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa|para|pra|pro)\b\s*)?/i, '')
+          .replace(/^(?:(?:o|a|os|as|um|uma)\b\s*)?(?:an[uú]ncio|an[uú]ncia|anunc|produto|item|op[cç][aã]o|valor|pre[cç]o|link|resultado|card|bot[aã]o|v[ií]deo)\b\s*(?:(?:de|do|da|dos|das|com|por|custando|no\s+valor\s+de|no\s+pre[cç]o\s+de|chamado|com\s+o\s+t[ií]tulo|sobre)\b\s*)?/i, '')
           .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+p[aá]gina|\s+do\s+mercado\s+livre)$/i, '')
           .trim();
 
         const searchTarget = cleanedActionTarget || target;
         let element = null;
 
-        // Suporte especial para seleção ordinal (primeiro vídeo, segundo resultado, link de baixo, etc.)
-        const isOrdinal = searchTarget.match(/(?:primeir[oa]|1[ºª]?|segund[oa]|2[ºª]?|terceir[oa]|3[ºª]?|quart[oa]|4[ºª]?|quint[oa]|5[ºª]?|sext[oa]|6[ºª]?|s[eé]tim[oa]|7[ºª]?|oitav[oa]|8[ºª]?|non[oa]|9[ºª]?|d[eé]cim[oa]|10[ºª]?|[uú]ltim[oa]|pr[oó]xim[oa]|seguinte|de\s+baixo|abaixo)/i);
+        // Suporte especial para seleção ordinal (primeiro vídeo, segundo resultado, anúncio da esquerda, da direita, etc.)
+        const isOrdinal = searchTarget.match(/(?:primeir[oa]|1[ºª]?|segund[oa]|2[ºª]?|terceir[oa]|3[ºª]?|quart[oa]|4[ºª]?|quint[oa]|5[ºª]?|sext[oa]|6[ºª]?|s[eé]tim[oa]|7[ºª]?|oitav[oa]|8[ºª]?|non[oa]|9[ºª]?|d[eé]cim[oa]|10[ºª]?|[uú]ltim[oa]|pr[oó]xim[oa]|seguinte|de\s+baixo|abaixo|esquerda|direita)/i);
         const isGenericOnly = /^(?:o\s+|a\s+|o\s+primeiro\s+|a\s+primeira\s+)?(?:v[ií]deo|resultado|item|link|produto)s?$/i.test(searchTarget);
 
         if (isOrdinal) {
@@ -441,8 +441,8 @@
   function parseOrdinalIndex(text) {
     const t = text.toLowerCase();
     if (t.includes('ultim') || t.includes('últim')) return -1;
-    if (t.includes('primeir') || t.match(/\b1[ºª]?\b/)) return 0;
-    if (t.includes('segund') || t.match(/\b2[ºª]?\b/) || t.includes('baixo') || t.includes('proxim') || t.includes('próxim') || t.includes('seguinte')) return 1;
+    if (t.includes('primeir') || t.match(/\b1[ºª]?\b/) || t.includes('esquerda')) return 0;
+    if (t.includes('segund') || t.match(/\b2[ºª]?\b/) || t.includes('baixo') || t.includes('proxim') || t.includes('próxim') || t.includes('seguinte') || t.includes('direita')) return 1;
     if (t.includes('terceir') || t.match(/\b3[ºª]?\b/)) return 2;
     if (t.includes('quart') || t.match(/\b4[ºª]?\b/)) return 3;
     if (t.includes('quint') || t.match(/\b5[ºª]?\b/)) return 4;
@@ -590,8 +590,8 @@
 
     // Remove prefixos falados de comandos ou qualificadores (ex: "anuncio de 74,99" -> "74 99", "produto de 119" -> "119")
     const cleanedQuery = normalizedQuery
-      .replace(/^(?:o\s+|a\s+|os\s+|as\s+|um\s+|uma\s+)?(?:video|anuncio|anuncia|anunc|produto|item|opcao|opcoes|valor|preco|link|resultado|card|botao)\s+(?:de|do|da|dos|das|com|por|custando|no\s+valor\s+de|no\s+preco\s+de|chamado|com\s+o\s+titulo|sobre)?\s*/i, '')
-      .replace(/^(?:o\s+|a\s+|os\s+|as\s+|da\s+|do\s+|de\s+|link\s+|resultado\s+)+/i, '')
+      .replace(/^(?:(?:o|a|os|as|um|uma)\b\s*)?(?:video|anuncio|anuncia|anunc|produto|item|opcao|opcoes|valor|preco|link|resultado|card|botao)\b\s*(?:(?:de|do|da|dos|das|com|por|custando|no\s+valor\s+de|no\s+preco\s+de|chamado|com\s+o\s+titulo|sobre)\b\s*)?/i, '')
+      .replace(/^(?:(?:o|a|os|as|da|do|de|link|resultado)\b\s*)+/i, '')
       .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+pagina|\s+do\s+mercado\s+livre)$/i, '')
       .trim();
 
