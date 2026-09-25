@@ -166,10 +166,11 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
         break;
       }
       action = 'CLICK_ELEMENT';
-      // Limpa verbos de ação e preposições iniciais para isolar o alvo real
+      // Limpa verbos de ação, preposições e qualificadores de entidade para isolar o alvo real
       const cleanTarget = prompt
         .replace(/^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\s+(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa|para|pra|pro)?\s*/i, '')
-        .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+p[aá]gina)$/i, '')
+        .replace(/^(?:o\s+|a\s+|os\s+|as\s+|um\s+|uma\s+)?(?:an[uú]ncio|an[uú]ncia|anunc|produto|item|op[cç][aã]o|valor|pre[cç]o|link|resultado|card|bot[aã]o)\s+(?:de|do|da|dos|das|com|por|custando|no\s+valor\s+de|no\s+pre[cç]o\s+de|chamado|com\s+o\s+t[ií]tulo|sobre)?\s*/i, '')
+        .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+p[aá]gina|\s+do\s+mercado\s+livre)$/i, '')
         .trim();
       label = `clicar em "${cleanTarget || prompt}"`;
       params = { target: cleanTarget || prompt };

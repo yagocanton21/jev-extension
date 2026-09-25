@@ -205,10 +205,11 @@
           return handleVideoControl('fullscreen');
         }
 
-        // Limpa verbos de ação para isolar o que realmente deve ser clicado
+        // Limpa verbos de ação e qualificadores de entidade para isolar o que realmente deve ser clicado
         const cleanedActionTarget = target
           .replace(/^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\s+(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa|para|pra|pro)?\s*/i, '')
-          .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+p[aá]gina)$/i, '')
+          .replace(/^(?:o\s+|a\s+|os\s+|as\s+|um\s+|uma\s+)?(?:an[uú]ncio|an[uú]ncia|anunc|produto|item|op[cç][aã]o|valor|pre[cç]o|link|resultado|card|bot[aã]o)\s+(?:de|do|da|dos|das|com|por|custando|no\s+valor\s+de|no\s+pre[cç]o\s+de|chamado|com\s+o\s+t[ií]tulo|sobre)?\s*/i, '')
+          .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+p[aá]gina|\s+do\s+mercado\s+livre)$/i, '')
           .trim();
 
         const searchTarget = cleanedActionTarget || target;
@@ -454,6 +455,131 @@
   }
 
   /**
+   * Localiza universalmente um anúncio/produto de e-commerce pelo preço falado
+   * (compatível com Mercado Livre, Amazon, Shopee, Magalu, AliExpress e sites de e-commerce gerais)
+   */
+  function findProductByPrice(query) {
+    if (!query) return null;
+
+    // Normaliza a query para extrair números
+    // "26 reais e 90" -> "26.90", "26,90" -> "26.90", "26" -> "26"
+    let clean = query.toLowerCase()
+      .replace(/\s*(?:reais|real)\s*(?:e\s*)?/i, '.')
+      .replace(/[^\d\.,]/g, '')
+      .replace(',', '.');
+
+    // Se tiver mais de um ponto (ex: 1.250,00), trata separadores de milhar
+    const parts = clean.split('.').filter(Boolean);
+    let targetFraction = '';
+    let targetCents = null;
+
+    if (parts.length === 1) {
+      targetFraction = parts[0];
+    } else if (parts.length === 2) {
+      targetFraction = parts[0];
+      targetCents = parts[1];
+    } else if (parts.length > 2) {
+      targetFraction = parts.slice(0, -1).join('');
+      targetCents = parts[parts.length - 1];
+    }
+
+    if (!targetFraction || !/^\d+$/.test(targetFraction)) return null;
+
+    // Padroniza centavos: "9" -> "90" se for dezena de centavos
+    if (targetCents && targetCents.length === 1) {
+      targetCents = targetCents + '0';
+    }
+
+    // Seletores de preços e valores em e-commerces
+    const priceSelectors = [
+      '.andes-money-amount',
+      '[class*="andes-money-amount"]',
+      '.a-price',
+      '[class*="price" i]',
+      '[class*="preco" i]',
+      '[class*="valor" i]',
+      '[data-price]'
+    ];
+
+    const priceElements = Array.from(document.querySelectorAll(priceSelectors.join(', ')))
+      .filter(el => isElementVisible(el));
+
+    let bestMatch = null;
+    let highestScore = -1;
+
+    for (const pEl of priceElements) {
+      // Ignora filtros de barra lateral (ex: "Até R$ 40", "R$ 40 a R$ 100")
+      if (pEl.closest('nav, aside, #sidebar, [role="navigation"], .ui-search-filter-dl, .ui-search-facet')) {
+        continue;
+      }
+
+      // Procura sub-elementos de fração e centavos
+      const fractionEl = pEl.querySelector('.andes-money-amount__fraction, .a-price-whole, [class*="fraction" i], [class*="whole" i]');
+      const centsEl = pEl.querySelector('.andes-money-amount__cents, .a-price-fraction, [class*="cents" i]');
+
+      const fractionText = fractionEl ? fractionEl.innerText.replace(/[^\d]/g, '') : null;
+      const centsText = centsEl ? centsEl.innerText.replace(/[^\d]/g, '') : null;
+
+      const fullRaw = (pEl.innerText || pEl.textContent || '').replace(/[^\d,\.]/g, ' ').trim();
+      const tokens = fullRaw.split(/\s+/).filter(Boolean);
+
+      let matches = false;
+      let score = 0;
+
+      if (fractionText) {
+        if (fractionText === targetFraction) {
+          if (targetCents) {
+            if (centsText === targetCents) {
+              matches = true;
+              score = 100; // Fração e centavos exatos!
+            } else if (!centsText && (targetCents === '00' || targetCents === '0')) {
+              matches = true;
+              score = 95;
+            }
+          } else {
+            // Usuário buscou apenas o valor inteiro (ex: "125" ou "170")
+            matches = true;
+            score = centsText ? 85 : 95;
+          }
+        }
+      } else {
+        // Sem elementos separados de fração/centavos: analisa o texto corrido
+        if (tokens.includes(targetFraction)) {
+          if (targetCents) {
+            if (tokens.includes(targetCents) || fullRaw.includes(`${targetFraction},${targetCents}`) || fullRaw.includes(`${targetFraction}.${targetCents}`)) {
+              matches = true;
+              score = 90;
+            }
+          } else {
+            matches = true;
+            score = 80;
+          }
+        }
+      }
+
+      if (matches && score > highestScore) {
+        // Encontra o container do produto (card, li, article, etc.)
+        const card = pEl.closest('li, article, [class*="card" i], [class*="item" i], [class*="product" i], [class*="result" i], [class*="poly-card" i], [class*="ui-search-layout__item" i]') || pEl.parentElement;
+
+        let clickable = null;
+        if (card) {
+          // Busca o link clicável principal do produto dentro do card
+          clickable = card.querySelector('a.poly-component__title, a[class*="title" i], h2 a, h3 a, a[href*="/p/"], a[href*="/dp/"], a[href*="/item/"], a') || card.closest('a') || card;
+        } else {
+          clickable = pEl.closest('a') || pEl;
+        }
+
+        if (clickable) {
+          highestScore = score;
+          bestMatch = clickable;
+        }
+      }
+    }
+
+    return bestMatch;
+  }
+
+  /**
    * Localiza de forma semântica e heurística o elemento interativo mais condizente com a fala
    */
   function findBestMatchingElement(query, tagFilters = null) {
@@ -471,8 +597,20 @@
 
     const effectiveQuery = cleanedQuery || normalizedQuery;
 
+    // Se a query contiver valor de preço/moeda, tenta primeiro o buscador especializado de e-commerce
+    if (/\b\d+(?:[,\.]\d{1,2})?\b/.test(query) || /\b\d+\s*(?:reais|real)\b/i.test(query)) {
+      const priceElement = findProductByPrice(query) || findProductByPrice(effectiveQuery);
+      if (priceElement) {
+        return priceElement;
+      }
+    }
+
     // Palavras-chave individuais da busca
-    const stopWords = new Set(['com', 'uma', 'uns', 'umas', 'para', 'pra', 'por', 'sobre', 'que', 'dos', 'das', 'seu', 'sua', 'ele', 'ela', 'de', 'do', 'da']);
+    const stopWords = new Set([
+      'com', 'uma', 'uns', 'umas', 'para', 'pra', 'por', 'sobre', 'que', 'dos', 'das', 'seu', 'sua', 'ele', 'ela', 'de', 'do', 'da',
+      'anuncio', 'anuncios', 'anuncia', 'produto', 'produtos', 'item', 'itens', 'opcao', 'opcoes', 'link', 'links', 'resultado', 'resultados',
+      'video', 'videos', 'card', 'cards', 'botao', 'botoes', 'valor', 'valores', 'preco', 'precos', 'reais', 'real', 'centavos', 'site', 'pagina'
+    ]);
     const queryTokens = effectiveQuery
       .split(/\s+/)
       .filter(w => w.length >= 2 && !stopWords.has(w));
@@ -504,6 +642,15 @@
       const targetWords = (normText + ' ' + normAria + ' ' + normTitle)
         .split(/\s+/)
         .filter(w => w.length >= 2);
+
+      // Se a busca contiver números (preço, modelo, código), TODOS os números DEVEM existir no elemento
+      const numericTokens = queryTokens.filter(t => /^\d+$/.test(t));
+      if (numericTokens.length > 0) {
+        const allNumbersPresent = numericTokens.every(num => targetWords.includes(num) || normText.includes(num) || normAria.includes(num));
+        if (!allNumbersPresent) {
+          continue; // Descarta candidatos que não têm todos os números especificados (evita clicar produto de 170 quando pediu 26)
+        }
+      }
 
       let score = 0;
 
@@ -560,7 +707,14 @@
         if (el.tagName && el.tagName.toLowerCase().startsWith('ytd-')) {
           bestMatch = el.querySelector('a#video-title, a#video-title-link, a#thumbnail, a[href*="/watch"], a[href*="/live"]') || el.querySelector('a') || el;
         } else {
-          bestMatch = el.tagName === 'A' ? el : (el.closest('a') || el);
+          // Se o elemento estiver dentro de um card de produto e não for link direto, encontra o link do produto
+          const cardParent = el.closest('li, article, [class*="card" i], [class*="product" i], [class*="item" i]');
+          if (cardParent && el.tagName !== 'A' && el.tagName !== 'BUTTON') {
+            const cardLink = cardParent.querySelector('a.poly-component__title, a[class*="title" i], h2 a, h3 a, a[href*="/p/"], a[href*="/dp/"], a');
+            bestMatch = cardLink || el.closest('a') || el;
+          } else {
+            bestMatch = el.tagName === 'A' ? el : (el.closest('a') || el);
+          }
         }
       }
     }
