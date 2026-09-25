@@ -101,8 +101,9 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
 
   const choice = actionAnswer.choice || 'pesquisar';
   let confidence = typeof actionAnswer.confidence === 'number' ? actionAnswer.confidence : 0.95;
-  let probabilities = actionAnswer.probabilities || { [choice]: confidence };
-  const isSensitive = (isSensitiveAnswer.noul || 0) > 0.65;
+  // Carrinho / adicionar ao carrinho / ver carrinho / abrir links NUNCA é sensível
+  const isCartOrNav = /\b(?:carrinho|cart|adicionar|ver|olhar|abrir|ir|voltar|rolar)\b/i.test(prompt);
+  const isSensitive = !isCartOrNav && (isSensitiveAnswer.noul || 0) > 0.75;
 
   let action = 'UNKNOWN';
   let label = choice;
@@ -168,8 +169,8 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
       action = 'CLICK_ELEMENT';
       // Limpa verbos de ação, preposições e qualificadores de entidade para isolar o alvo real
       const cleanTarget = prompt
-        .replace(/^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\b\s*(?:(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa|para|pra|pro)\b\s*)?/i, '')
-        .replace(/^(?:(?:o|a|os|as|um|uma)\b\s*)?(?:an[uú]ncio|an[uú]ncia|anunc|produto|item|op[cç][aã]o|valor|pre[cç]o|link|resultado|card|bot[aã]o|v[ií]deo)\b\s*(?:(?:de|do|da|dos|das|com|por|custando|no\s+valor\s+de|no\s+pre[cç]o\s+de|chamado|com\s+o\s+t[ií]tulo|sobre)\b\s*)?/i, '')
+        .replace(/^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\b\s*(?:(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa|para|pra|pro)\b\s*)+/i, '')
+        .replace(/^(?:(?:o|a|os|as|um|uma)\b\s*)?(?:an[uú]ncio|an[uú]ncia|anunc|produto|item|op[cç][aã]o|valor|pre[cç]o|link|resultado|card|bot[aã]o|v[ií]deo)\b\s*(?:(?:de|do|da|dos|das|com|por|custando|no\s+valor\s+de|no\s+pre[cç]o\s+de|chamado|com\s+o\s+t[ií]tulo|sobre)\b\s*)*/i, '')
         .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+p[aá]gina|\s+do\s+mercado\s+livre)$/i, '')
         .trim();
       label = `clicar em "${cleanTarget || prompt}"`;

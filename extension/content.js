@@ -207,17 +207,36 @@
 
         // Limpa verbos de ação e qualificadores de entidade para isolar o que realmente deve ser clicado
         const cleanedActionTarget = target
-          .replace(/^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\b\s*(?:(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa|para|pra|pro)\b\s*)?/i, '')
-          .replace(/^(?:(?:o|a|os|as|um|uma)\b\s*)?(?:an[uú]ncio|an[uú]ncia|anunc|produto|item|op[cç][aã]o|valor|pre[cç]o|link|resultado|card|bot[aã]o|v[ií]deo)\b\s*(?:(?:de|do|da|dos|das|com|por|custando|no\s+valor\s+de|no\s+pre[cç]o\s+de|chamado|com\s+o\s+t[ií]tulo|sobre)\b\s*)?/i, '')
+          .replace(/^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\b\s*(?:(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa|para|pra|pro)\b\s*)+/i, '')
+          .replace(/^(?:(?:o|a|os|as|um|uma)\b\s*)?(?:an[uú]ncio|an[uú]ncia|anunc|produto|item|op[cç][aã]o|valor|pre[cç]o|link|resultado|card|bot[aã]o|v[ií]deo)\b\s*(?:(?:de|do|da|dos|das|com|por|custando|no\s+valor\s+de|no\s+pre[cç]o\s+de|chamado|com\s+o\s+t[ií]tulo|sobre)\b\s*)*/i, '')
           .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+p[aá]gina|\s+do\s+mercado\s+livre)$/i, '')
           .trim();
 
         const searchTarget = cleanedActionTarget || target;
         let element = null;
 
+        // 1. Suporte específico e prioritário para "Ir para o carrinho" / "Ver carrinho"
+        const isAddToCart = /\b(?:adicionar|coloque|colocar|por|bota|botar|incluir)\b/i.test(target);
+        const isGoToCart = !isAddToCart && (/\b(?:ir|vai|ver|olhar|abrir|acessar|mostrar)\b.*?\bcarrinho\b/i.test(target) || /^(?:o\s+)?carrinho$/i.test(searchTarget.trim()) || /\b(?:meu\s+carrinho|carrinho\s+de\s+compras)\b/i.test(target));
+
+        if (isGoToCart) {
+          element = findCartElement();
+          if (!element) {
+            // Se nenhum elemento do carrinho foi encontrado no DOM, navega diretamente para a URL do carrinho
+            if (window.location.hostname.includes('mercadolivre')) {
+              window.location.href = 'https://myaccount.mercadolivre.com.br/cart';
+              return { message: 'Navegando para o carrinho do Mercado Livre.' };
+            }
+            if (window.location.hostname.includes('amazon.')) {
+              window.location.href = 'https://www.amazon.com.br/gp/cart/view.html';
+              return { message: 'Navegando para o carrinho da Amazon.' };
+            }
+          }
+        }
+
         // Suporte especial para seleção ordinal (primeiro vídeo, segundo resultado, anúncio da esquerda, da direita, etc.)
-        const isOrdinal = searchTarget.match(/(?:^|\s)(?:primeir[oa]|segund[oa]|terceir[oa]|quart[oa]|quint[oa]|sext[oa]|s[eé]tim[oa]|oitav[oa]|non[oa]|d[eé]cim[oa]|[uú]ltim[oa]|pr[oó]xim[oa]|seguinte|de\s+baixo|abaixo|esquerda|direita|\d{1,2}[ºª]|\d{1,2}[oa]\b)(?:\s|$)/i);
-        const isGenericOnly = /^(?:o\s+|a\s+|o\s+primeiro\s+|a\s+primeira\s+)?(?:v[ií]deo|resultado|item|link|produto)s?$/i.test(searchTarget);
+        const isOrdinal = !isGoToCart && searchTarget.match(/(?:^|\s)(?:primeir[oa]|segund[oa]|terceir[oa]|quart[oa]|quint[oa]|sext[oa]|s[eé]tim[oa]|oitav[oa]|non[oa]|d[eé]cim[oa]|[uú]ltim[oa]|pr[oó]xim[oa]|seguinte|de\s+baixo|abaixo|esquerda|direita|\d{1,2}[ºª]|\d{1,2}[oa]\b)(?:\s|$)/i);
+        const isGenericOnly = !isGoToCart && /^(?:o\s+|a\s+|o\s+primeiro\s+|a\s+primeira\s+)?(?:v[ií]deo|resultado|item|link|produto)s?$/i.test(searchTarget);
 
         if (isOrdinal) {
           element = findOrdinalElement(searchTarget);
@@ -586,6 +605,49 @@
   }
 
   /**
+   * Localiza universalmente o botão ou link de carrinho na página ou modal ativo
+   */
+  function findCartElement() {
+    // 1. Prioridade absoluta para botão de carrinho dentro de modal/dialog/drawer aberto
+    const activeModal = document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open], .ui-pdp-modal, [class*="modal" i]:not([style*="display: none"]), [class*="overlay" i]:not([style*="display: none"]), [class*="drawer" i]:not([style*="display: none"])');
+    if (activeModal && isElementVisible(activeModal)) {
+      const modalElements = Array.from(activeModal.querySelectorAll('a, button, [role="button"], [role="link"]'));
+      const cartElInModal = modalElements.find(el => {
+        const txt = (el.innerText || el.textContent || '').toLowerCase();
+        return (txt.includes('carrinho') || txt.includes('cart')) && !txt.includes('adicionad');
+      });
+      if (cartElInModal) return cartElInModal;
+    }
+
+    // 2. Busca link do carrinho no header ou navegação geral do e-commerce
+    const cartSelectors = [
+      'a[href*="/cart" i]',
+      'a[href*="/carrinho" i]',
+      'a[href*="mercadolivre.com.br/cart"]',
+      'a#nav-cart',
+      '[data-testid*="cart" i]',
+      'a[aria-label*="carrinho" i]',
+      'a[aria-label*="cart" i]',
+      'a[title*="carrinho" i]',
+      'a[title*="cart" i]',
+      'button[aria-label*="carrinho" i]',
+      '.nav-cart',
+      '[class*="cart-icon" i]',
+      '[class*="cart-button" i]',
+      '[class*="cart" i]'
+    ];
+
+    for (const sel of cartSelectors) {
+      const el = document.querySelector(sel);
+      if (el && isElementVisible(el)) {
+        return el.tagName === 'A' ? el : (el.closest('a') || el);
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * Localiza de forma semântica e heurística o elemento interativo mais condizente com a fala
    */
   function findBestMatchingElement(query, tagFilters = null) {
@@ -694,6 +756,12 @@
       const isDirectInteractive = el.tagName === 'A' || el.tagName === 'BUTTON' || el.getAttribute('role') === 'link' || el.getAttribute('role') === 'button';
       if (isDirectInteractive) {
         score += 15;
+      }
+
+      // Prioridade máxima para elementos dentro de modal/dialog/popup/drawer ativo
+      const inModal = el.closest('[role="dialog"], [role="alertdialog"], dialog[open], .ui-pdp-modal, [class*="modal" i], [class*="overlay" i], [class*="popup" i], [class*="drawer" i]');
+      if (inModal && isElementVisible(inModal)) {
+        score += 45;
       }
 
       // Penalidade de tamanho para evitar selecionar blocos inteiros da página
