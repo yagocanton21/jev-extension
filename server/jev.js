@@ -109,7 +109,7 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
   let params = {};
 
   const trimmed = prompt.trim();
-  const isDirectOpenVerb = /^(?:abrir|abra|abre|clicar|clique|selecionar|tocar|entrar|acessar)\b/i.test(trimmed);
+  const isDirectOpenVerb = /^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\b/i.test(trimmed);
   const isExternalSite = /^(?:abrir|abra|abre|acessar|acesse|ir para|vai para)\s+(?:o|a|ao)?\s*(youtube|mercado livre|mercadolivre|google|gmail|github|uol|amazon|maps|google maps|chat\s*gpt|chat\s*pt|whatsapp|instagram|twitter|reddit|wikipedia|globo|g1|netflix|spotify|linkedin|facebook)/i.test(trimmed);
 
   // Se o usuário falou expressamente "Abrir [vídeo/anúncio/título/link]" e NÃO é um site externo famoso,
@@ -168,7 +168,7 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
       action = 'CLICK_ELEMENT';
       // Limpa verbos de ação e preposições iniciais para isolar o alvo real
       const cleanTarget = prompt
-        .replace(/^(?:abrir|abra|abre|clicar|clique|cliquei|selecionar|selecione|tocar|toque|entrar|entre|acessar|acesse)\s+(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa)?\s*/i, '')
+        .replace(/^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\s+(?:em|no|na|nos|nas|o|a|os|as|ao|aos|do|da|dos|das|de|pelo|pela|num|numa|para|pra|pro)?\s*/i, '')
         .replace(/(?:\s+no\s+youtube|\s+no\s+google|\s+na\s+p[aá]gina)$/i, '')
         .trim();
       label = `clicar em "${cleanTarget || prompt}"`;
