@@ -374,7 +374,20 @@
         }
       }
 
-      if (score > highestScore && score >= 40) {
+      // Bônus de Especificidade: Elementos clicáveis diretos (<a>, <button>, role="link") têm prioridade
+      const isDirectInteractive = el.tagName === 'A' || el.tagName === 'BUTTON' || el.getAttribute('role') === 'link' || el.getAttribute('role') === 'button';
+      if (isDirectInteractive) {
+        score += 15;
+      }
+
+      // Penalidade de Tamanho: Evita que caixas, tabelas ou containers gigantes que englobam a página vençam links específicos
+      if (score > 0 && innerText.length > 0) {
+        const refLen = (cleanedQuery || normalizedQuery).length;
+        const extraChars = Math.max(0, innerText.length - refLen);
+        score -= Math.min(35, Math.floor(extraChars / 6));
+      }
+
+      if (score > highestScore && score >= 35) {
         highestScore = score;
 
         // Se for um container de vídeo do YouTube, pega o link principal clicável dele
