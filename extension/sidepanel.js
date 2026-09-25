@@ -546,6 +546,18 @@ function interpretCommandLocally(rawText, activeTab = null) {
     };
   }
 
+  // 8.5. Carrinho / Checkout / Sacola de Compras
+  if (/\b(?:carrinho|sacola|cesto|cart|bag)\b/i.test(normalized)) {
+    probs['clicar elemento'] = 0.99;
+    return {
+      action: 'CLICK_ELEMENT',
+      label: 'ir para o carrinho',
+      confidence: 0.99,
+      params: { target: 'carrinho' },
+      probabilities: probs
+    };
+  }
+
   // 9. Abrir Sites Genéricos (Mercado Livre, YouTube, Gmail, Amazon, etc.)
   const openMatch = normalized.match(/^(?:abrir|abra|abre|acessar|acesse|ir para|vai para)\s+(?:o|a|ao)?\s*(.+)$/i);
   if (openMatch && openMatch[1]) {
@@ -572,19 +584,34 @@ function interpretCommandLocally(rawText, activeTab = null) {
 
     const cleanSiteKey = rawTarget.toLowerCase().replace(/\s+/g, '');
     let targetUrl = siteMap[cleanSiteKey];
-    if (!targetUrl) {
-      if (rawTarget.includes('.')) {
-        targetUrl = rawTarget.startsWith('http') ? rawTarget : `https://${rawTarget}`;
-      } else {
-        targetUrl = `https://www.${cleanSiteKey}.com.br`;
-      }
+    if (targetUrl) {
+      return {
+        action: 'OPEN_URL',
+        label: `abrir ${rawTarget}`,
+        confidence: 0.98,
+        params: { url: targetUrl },
+        probabilities: probs
+      };
     }
 
+    if (rawTarget.includes('.')) {
+      targetUrl = rawTarget.startsWith('http') ? rawTarget : `https://${rawTarget}`;
+      return {
+        action: 'OPEN_URL',
+        label: `abrir ${rawTarget}`,
+        confidence: 0.98,
+        params: { url: targetUrl },
+        probabilities: probs
+      };
+    }
+
+    // Se NÃO é um site externo conhecido nem contém domínio (".com", ".br"), trata como clique em elemento na página
+    probs['clicar elemento'] = 0.92;
     return {
-      action: 'OPEN_URL',
-      label: `abrir ${rawTarget}`,
-      confidence: 0.98,
-      params: { url: targetUrl },
+      action: 'CLICK_ELEMENT',
+      label: `clicar em "${rawTarget}"`,
+      confidence: 0.92,
+      params: { target: rawTarget },
       probabilities: probs
     };
   }

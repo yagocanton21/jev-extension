@@ -101,8 +101,10 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
 
   const choice = actionAnswer.choice || 'pesquisar';
   let confidence = typeof actionAnswer.confidence === 'number' ? actionAnswer.confidence : 0.95;
+  let probabilities = actionAnswer.probabilities || { [choice]: confidence };
+
   // Carrinho / adicionar ao carrinho / ver carrinho / abrir links NUNCA é sensível
-  const isCartOrNav = /\b(?:carrinho|cart|adicionar|ver|olhar|abrir|ir|voltar|rolar)\b/i.test(prompt);
+  const isCartOrNav = /\b(?:carrinho|cart|sacola|cesto|adicionar|ver|olhar|abrir|ir|voltar|rolar)\b/i.test(prompt);
   const isSensitive = !isCartOrNav && (isSensitiveAnswer.noul || 0) > 0.75;
 
   let action = 'UNKNOWN';
@@ -113,11 +115,15 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
   const isDirectOpenVerb = /^(?:abrir|abra|abre|abri|clicar|clique|clica|cliquei|apertar|aperta|aperte|apertei|pressionar|pressiona|pressione|selecionar|selecione|seleciona|tocar|toque|toca|toquei|escolher|escolha|escolhi|marcar|marca|marque|entrar|entre|entra|acessar|acesse|acessa|ir|vai)\b/i.test(trimmed);
   const isExternalSite = /^(?:abrir|abra|abre|acessar|acesse|ir para|vai para)\s+(?:o|a|ao)?\s*(youtube|mercado livre|mercadolivre|google|gmail|github|uol|amazon|maps|google maps|chat\s*gpt|chat\s*pt|whatsapp|instagram|twitter|reddit|wikipedia|globo|g1|netflix|spotify|linkedin|facebook)/i.test(trimmed);
 
-  // Se o usuário falou expressamente "Abrir [vídeo/anúncio/título/link]" e NÃO é um site externo famoso,
+  // Se o usuário falou expressamente "Abrir [vídeo/anúncio/título/link]" ou quer ir para o carrinho e NÃO é um site externo famoso,
   // prioriza "clicar elemento" (evita que o modelo caia em "pesquisar" ou "abrir site" sintetizando URLs falsas)
   let effectiveChoice = choice;
   if (isExternalSite) {
     effectiveChoice = 'abrir site';
+  } else if (/\b(?:carrinho|sacola|cesto|cart|bag)\b/i.test(trimmed)) {
+    effectiveChoice = 'clicar elemento';
+    confidence = 0.98;
+    probabilities = { 'clicar elemento': 0.98 };
   } else if (isDirectOpenVerb && (choice === 'pesquisar' || choice === 'abrir site')) {
     // Se o comando não tiver um domínio explícito (ex: ".com") e não for site famoso,
     // significa que é para clicar no elemento/link da página

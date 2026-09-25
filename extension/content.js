@@ -215,9 +215,13 @@
         const searchTarget = cleanedActionTarget || target;
         let element = null;
 
-        // 1. Suporte específico e prioritário para "Ir para o carrinho" / "Ver carrinho"
+        // 1. Suporte específico e prioritário para "Ir para o carrinho" / "Ver carrinho" / "Sacola"
         const isAddToCart = /\b(?:adicionar|coloque|colocar|por|bota|botar|incluir)\b/i.test(target);
-        const isGoToCart = !isAddToCart && (/\b(?:ir|vai|ver|olhar|abrir|acessar|mostrar)\b.*?\bcarrinho\b/i.test(target) || /^(?:o\s+)?carrinho$/i.test(searchTarget.trim()) || /\b(?:meu\s+carrinho|carrinho\s+de\s+compras)\b/i.test(target));
+        const isGoToCart = !isAddToCart && (
+          /\b(?:ir|vai|ver|olhar|abrir|acessar|mostrar)\b.*?\b(?:carrinho|cart|sacola|cesto|bag)\b/i.test(target) ||
+          /^(?:o\s+|a\s+|meu\s+|minha\s+)?(?:carrinho|cart|sacola|cesto|bag)$/i.test(searchTarget.trim()) ||
+          /\b(?:meu\s+carrinho|minha\s+sacola|carrinho\s+de\s+compras|sacola\s+de\s+compras)\b/i.test(target)
+        );
 
         if (isGoToCart) {
           element = findCartElement();
@@ -608,39 +612,59 @@
    * Localiza universalmente o botão ou link de carrinho na página ou modal ativo
    */
   function findCartElement() {
-    // 1. Prioridade absoluta para botão de carrinho dentro de modal/dialog/drawer aberto
-    const activeModal = document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open], .ui-pdp-modal, [class*="modal" i]:not([style*="display: none"]), [class*="overlay" i]:not([style*="display: none"]), [class*="drawer" i]:not([style*="display: none"])');
+    // 1. Prioridade absoluta para botão de carrinho dentro de modal/dialog/drawer/overlay aberto
+    const activeModal = document.querySelector('[role="dialog"], [role="alertdialog"], dialog[open], .ui-pdp-modal, [class*="modal" i]:not([style*="display: none"]), [class*="overlay" i]:not([style*="display: none"]), [class*="drawer" i]:not([style*="display: none"]), [class*="sheet" i]:not([style*="display: none"])');
     if (activeModal && isElementVisible(activeModal)) {
-      const modalElements = Array.from(activeModal.querySelectorAll('a, button, [role="button"], [role="link"]'));
+      const modalElements = Array.from(activeModal.querySelectorAll('a, button, [role="button"], [role="link"], input[type="button"], input[type="submit"]'));
       const cartElInModal = modalElements.find(el => {
-        const txt = (el.innerText || el.textContent || '').toLowerCase();
-        return (txt.includes('carrinho') || txt.includes('cart')) && !txt.includes('adicionad');
+        if (!isElementVisible(el)) return false;
+        const txt = ((el.innerText || el.textContent || '') + ' ' + (el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '')).toLowerCase();
+        return (txt.includes('carrinho') || txt.includes('cart') || txt.includes('sacola') || txt.includes('checkout') || txt.includes('finalizar')) && !txt.includes('adicionad') && !txt.includes('continuar comprando');
       });
-      if (cartElInModal) return cartElInModal;
+      if (cartElInModal) {
+        return cartElInModal.tagName === 'A' ? cartElInModal : (cartElInModal.closest('a') || cartElInModal);
+      }
     }
 
-    // 2. Busca link do carrinho no header ou navegação geral do e-commerce
+    // 2. Busca link ou botão do carrinho no header ou navegação geral de qualquer e-commerce
     const cartSelectors = [
       'a[href*="/cart" i]',
       'a[href*="/carrinho" i]',
-      'a[href*="mercadolivre.com.br/cart"]',
-      'a#nav-cart',
+      'a[href*="/sacola" i]',
+      'a[href*="/checkout" i]',
+      'a[href*="/basket" i]',
+      'a[href*="/bag" i]',
       '[data-testid*="cart" i]',
+      '[data-testid*="carrinho" i]',
+      '#nav-cart',
+      '#cart',
+      '#carrinho',
       'a[aria-label*="carrinho" i]',
       'a[aria-label*="cart" i]',
+      'a[aria-label*="sacola" i]',
+      'button[aria-label*="carrinho" i]',
+      'button[aria-label*="cart" i]',
+      'button[aria-label*="sacola" i]',
       'a[title*="carrinho" i]',
       'a[title*="cart" i]',
-      'button[aria-label*="carrinho" i]',
-      '.nav-cart',
+      'a[title*="sacola" i]',
       '[class*="cart-icon" i]',
       '[class*="cart-button" i]',
+      '[class*="shopping-cart" i]',
+      '[class*="minicart" i]',
+      '.nav-cart',
       '[class*="cart" i]'
     ];
 
     for (const sel of cartSelectors) {
-      const el = document.querySelector(sel);
-      if (el && isElementVisible(el)) {
-        return el.tagName === 'A' ? el : (el.closest('a') || el);
+      const elements = Array.from(document.querySelectorAll(sel));
+      for (const el of elements) {
+        if (isElementVisible(el)) {
+          // Ignora mensagens de notificação como "Adicionado ao carrinho"
+          const txt = ((el.innerText || el.textContent || '') + ' ' + (el.getAttribute('aria-label') || '')).toLowerCase();
+          if (txt.includes('adicionad')) continue;
+          return el.tagName === 'A' ? el : (el.closest('a') || el);
+        }
       }
     }
 
@@ -673,6 +697,14 @@
       }
     }
 
+    // Se a query for carrinho / sacola / checkout, prioriza o localizador universal de carrinho
+    if (/\b(?:carrinho|sacola|cesto|cart|bag|checkout)\b/i.test(normalizedQuery) || /\b(?:carrinho|sacola|cesto|cart|bag|checkout)\b/i.test(effectiveQuery)) {
+      const cartElement = findCartElement();
+      if (cartElement) {
+        return cartElement;
+      }
+    }
+
     // Palavras-chave individuais da busca
     const stopWords = new Set([
       'com', 'uma', 'uns', 'umas', 'para', 'pra', 'por', 'sobre', 'que', 'dos', 'das', 'seu', 'sua', 'ele', 'ela', 'de', 'do', 'da',
@@ -694,8 +726,8 @@
     for (const el of candidates) {
       if (!isElementVisible(el)) continue;
 
-      // Ignora menus laterais/guia se o usuário não pediu menu especificamente
-      const inSidebar = el.closest('nav, aside, #guide, ytd-guide-renderer, ytd-mini-guide-renderer, #sidebar, [role="navigation"]');
+      // Ignora menus laterais de vídeo/feed se o usuário não pediu menu especificamente (mantém navegação de cabeçalho intacta)
+      const inSidebar = el.closest('aside, #guide, ytd-guide-renderer, ytd-mini-guide-renderer, #sidebar, [class*="sidebar" i], [id*="sidebar" i]');
       if (inSidebar && !normalizedQuery.includes('menu') && !normalizedQuery.includes('lateral') && !normalizedQuery.includes('guia')) {
         continue;
       }
