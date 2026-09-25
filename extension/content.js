@@ -490,15 +490,21 @@
       targetCents = targetCents + '0';
     }
 
-    // Seletores de preços e valores em e-commerces
+    // Seletores universais de preços e valores em e-commerces (Schema.org, Shopify, WooCommerce, Amazon, Mercado Livre, Shopee, etc.)
     const priceSelectors = [
+      '[itemprop="price"]',
+      '[data-price]',
+      '[data-product-price]',
       '.andes-money-amount',
       '[class*="andes-money-amount"]',
       '.a-price',
+      '.woocommerce-Price-amount',
+      '.price-item',
+      '.money',
       '[class*="price" i]',
       '[class*="preco" i]',
       '[class*="valor" i]',
-      '[data-price]'
+      '[class*="amount" i]'
     ];
 
     const priceElements = Array.from(document.querySelectorAll(priceSelectors.join(', ')))
@@ -509,13 +515,13 @@
 
     for (const pEl of priceElements) {
       // Ignora filtros de barra lateral (ex: "Até R$ 40", "R$ 40 a R$ 100")
-      if (pEl.closest('nav, aside, #sidebar, [role="navigation"], .ui-search-filter-dl, .ui-search-facet')) {
+      if (pEl.closest('nav, aside, #sidebar, [role="navigation"], .ui-search-filter-dl, .ui-search-facet, .filters, [class*="filter" i]')) {
         continue;
       }
 
       // Procura sub-elementos de fração e centavos
-      const fractionEl = pEl.querySelector('.andes-money-amount__fraction, .a-price-whole, [class*="fraction" i], [class*="whole" i]');
-      const centsEl = pEl.querySelector('.andes-money-amount__cents, .a-price-fraction, [class*="cents" i]');
+      const fractionEl = pEl.querySelector('.andes-money-amount__fraction, .a-price-whole, [class*="fraction" i], [class*="whole" i], [class*="integer" i]');
+      const centsEl = pEl.querySelector('.andes-money-amount__cents, .a-price-fraction, [class*="cents" i], [class*="decimal" i]');
 
       const fractionText = fractionEl ? fractionEl.innerText.replace(/[^\d]/g, '') : null;
       const centsText = centsEl ? centsEl.innerText.replace(/[^\d]/g, '') : null;
@@ -559,12 +565,12 @@
 
       if (matches && score > highestScore) {
         // Encontra o container individual do produto (card, li, article, etc.)
-        const card = pEl.closest('li.ui-search-layout__item, .poly-card, [data-component-type="s-search-result"], article, [class*="card" i]:not([class*="layout"]):not([class*="results"]):not([class*="main"]), [class*="item" i]:not([class*="layout"]):not([class*="results"]):not([class*="main"]), li') || pEl.parentElement;
+        const card = pEl.closest('article, [role="article"], [role="listitem"], [itemscope][itemtype*="Product"], [data-component-type="s-search-result"], li.ui-search-layout__item, .poly-card, [class*="card" i]:not([class*="layout"]):not([class*="results"]):not([class*="main"]):not([class*="grid"]), [class*="product" i]:not([class*="layout"]):not([class*="results"]):not([class*="main"]):not([class*="grid"]), [class*="item" i]:not([class*="layout"]):not([class*="results"]):not([class*="main"]):not([class*="grid"]), li') || pEl.parentElement;
 
         let clickable = null;
         if (card) {
           // Busca o link clicável principal do produto dentro do card
-          clickable = card.querySelector('a.poly-component__title, a[class*="title" i], h2 a, h3 a, a[href*="/p/"], a[href*="/dp/"], a[href*="/item/"], a') || card.closest('a') || card;
+          clickable = card.querySelector('a.poly-component__title, a[class*="title" i], h1 a, h2 a, h3 a, h4 a, a[href*="/p/"], a[href*="/dp/"], a[href*="/product/"], a[href*="/item/"], a[href*="/gp/"], a[href]:not([href^="#"]):not([href^="javascript"])') || card.closest('a') || card;
         } else {
           clickable = pEl.closest('a') || pEl;
         }
@@ -723,12 +729,48 @@
   }
 
   /**
-   * Localiza elementos pela ordem na tela (ex: primeiro vídeo, segundo resultado)
+   * Localiza elementos pela ordem na tela ou posicionamento relativo
+   * (ex: "primeiro vídeo", "segundo anúncio", "anúncio da esquerda", "da direita", "do meio")
+   * Universal para QUALQUER site do mundo baseado em Web Standards (HTML5 / W3C ARIA).
    */
   function findOrdinalElement(targetQuery) {
+    const t = targetQuery.toLowerCase();
+    const isLeft = t.includes('esquerda');
+    const isRight = t.includes('direita');
+    const isMiddle = t.includes('meio') || t.includes('centro');
     const targetIndex = parseOrdinalIndex(targetQuery);
 
-    // Se estiver no YouTube, busca os vídeos na página atual (Busca, Player ou Home)
+    // Ordenação visual universal em leitura natural (linha a linha, esquerda para direita)
+    function sortByReadingOrder(elements) {
+      return elements.sort((a, b) => {
+        const rectA = a.getBoundingClientRect();
+        const rectB = b.getBoundingClientRect();
+        if (Math.abs(rectA.top - rectB.top) < 35) {
+          return rectA.left - rectB.left;
+        }
+        return rectA.top - rectB.top;
+      });
+    }
+
+    function pickFromElements(elements) {
+      if (!elements || elements.length === 0) return null;
+      sortByReadingOrder(elements);
+
+      if (isLeft || isRight || isMiddle) {
+        const firstTop = elements[0].getBoundingClientRect().top;
+        const firstRow = elements.filter(el => Math.abs(el.getBoundingClientRect().top - firstTop) < 40);
+        if (isLeft) return firstRow[0];
+        if (isRight) return firstRow[firstRow.length - 1];
+        if (isMiddle) return firstRow[Math.floor(firstRow.length / 2)];
+      }
+
+      if (targetIndex === -1) return elements[elements.length - 1];
+      return elements[targetIndex] || elements[0];
+    }
+
+    // ==========================================
+    // 1. YOUTUBE (Busca, Player ou Home)
+    // ==========================================
     if (window.location.hostname.includes('youtube.com')) {
       closeSearchDropdowns();
       const isSearchResults = window.location.pathname.includes('/results') || window.location.search.includes('search_query=');
@@ -775,10 +817,7 @@
       }
 
       if (videoContainers.length > 0) {
-        const targetContainer = targetIndex === -1
-          ? videoContainers[videoContainers.length - 1]
-          : (videoContainers[targetIndex] || videoContainers[0]);
-
+        const targetContainer = pickFromElements(videoContainers);
         if (targetContainer) {
           const clickable = targetContainer.querySelector('a#video-title, a#video-title-link, a#thumbnail, a[href*="/watch"], a[href*="/live"], a[href*="/shorts"]') || targetContainer.querySelector('a');
           if (clickable) return clickable;
@@ -805,9 +844,7 @@
         }
 
         if (uniqueLinks.length > 0) {
-          return targetIndex === -1
-            ? uniqueLinks[uniqueLinks.length - 1]
-            : (uniqueLinks[targetIndex] || uniqueLinks[0]);
+          return pickFromElements(uniqueLinks);
         }
       }
     }
@@ -817,7 +854,7 @@
     // ==========================================
     if (window.location.hostname.includes('mercadolivre')) {
       const items = Array.from(document.querySelectorAll(
-        'li.ui-search-layout__item, .ui-search-result, .poly-card, .ui-search-layout__item, div[class*="ui-search-result"]'
+        'li.ui-search-layout__item, .ui-search-result, .poly-card, div[class*="ui-search-result"]'
       )).filter(el => {
         // Ignora qualquer coisa na barra lateral de filtros (ui-search-sidebar)
         if (el.closest('.ui-search-sidebar, aside, nav')) return false;
@@ -825,7 +862,7 @@
       });
 
       if (items.length > 0) {
-        const targetItem = targetIndex === -1 ? items[items.length - 1] : (items[targetIndex] || items[0]);
+        const targetItem = pickFromElements(items);
         if (targetItem) {
           const link = targetItem.querySelector('a.poly-component__title, a.ui-search-link, a.poly-card__title, a[href*="/MLB-"], a[href*="/p/"], h2 a, h3 a') || targetItem.querySelector('a');
           if (link) return link;
@@ -835,24 +872,29 @@
     }
 
     // ==========================================
-    // 3. GOOGLE (Resultados de Busca)
+    // 3. MOTORES DE BUSCA (Google, Bing, DuckDuckGo)
     // ==========================================
-    if (window.location.hostname.includes('google.')) {
-      const results = Array.from(document.querySelectorAll('h3'))
-        .map(h3 => h3.closest('a') || h3.querySelector('a') || h3.parentElement?.closest('a'))
+    if (window.location.hostname.includes('google.') || window.location.hostname.includes('bing.') || window.location.hostname.includes('duckduckgo.')) {
+      const results = Array.from(document.querySelectorAll('h3, h2.b_algo, .result__title'))
+        .map(h => h.closest('a') || h.querySelector('a') || h.parentElement?.closest('a'))
         .filter(el => el && el.tagName === 'A' && isElementVisible(el));
-        
+
       if (results.length > 0) {
-        return targetIndex === -1 ? results[results.length - 1] : (results[targetIndex] || results[0]);
+        return pickFromElements(results);
       }
     }
 
     // ==========================================
-    // 4. ADAPTADOR UNIVERSAL PARA QUALQUER SITE DO MUNDO
+    // 4. ADAPTADOR UNIVERSAL PARA QUALQUER SITE DO MUNDO (W3C / HTML5 / ARIA)
     // ==========================================
     // Busca blocos ou cards de conteúdo repetitivo (artigos, produtos, posts, resultados, tweets, etc.)
     const cardSelectors = [
       'article',
+      '[role="article"]',
+      '[role="listitem"]',
+      '[itemscope][itemtype*="Product"]',
+      '[itemscope][itemtype*="Article"]',
+      '[data-component-type*="search-result"]',
       '[class*="product"]',
       '[class*="item"]',
       '[class*="result"]',
@@ -860,8 +902,6 @@
       '[class*="video"]',
       '[class*="post"]',
       '[class*="entry"]',
-      '[role="article"]',
-      '[role="listitem"]',
       'li:has(a[href])',
       'tr:has(a[href])'
     ];
@@ -873,13 +913,10 @@
     });
 
     if (cards.length > 0) {
-      // Ordena visualmente os cards do topo para baixo da página
-      cards.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-
-      const targetCard = targetIndex === -1 ? cards[cards.length - 1] : (cards[targetIndex] || cards[0]);
+      const targetCard = pickFromElements(cards);
       if (targetCard) {
         // Encontra o link de título principal dentro do card
-        const link = targetCard.querySelector('h1 a, h2 a, h3 a, h4 a, a[class*="title"], a.title, a[href*="/p/"], a[href*="/dp/"], a[href]:not([href^="#"]):not([href^="javascript"])') || targetCard.querySelector('a');
+        const link = targetCard.querySelector('h1 a, h2 a, h3 a, h4 a, a[class*="title" i], a.title, a[href*="/p/"], a[href*="/dp/"], a[href*="/product/"], a[href*="/item/"], a[href]:not([href^="#"]):not([href^="javascript"])') || targetCard.querySelector('a');
         if (link) return link;
         return targetCard;
       }
@@ -895,10 +932,7 @@
       .filter(el => el && isElementVisible(el));
 
     if (genericLinks.length > 0) {
-      genericLinks.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
-      return targetIndex === -1
-        ? genericLinks[genericLinks.length - 1]
-        : (genericLinks[targetIndex] || genericLinks[0]);
+      return pickFromElements(genericLinks);
     }
 
     return null;
