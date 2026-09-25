@@ -434,7 +434,7 @@ function interpretCommandLocally(rawText, activeTab = null) {
   }
 
   // 4. Voltar / Avançar / Fechar vídeo
-  if (normalized.includes('voltar') || normalized.includes('volte') || normalized.includes('pagina anterior') || normalized.includes('fechar video') || normalized.includes('fechar vídeo') || normalized.includes('sair do video') || normalized.includes('sair do vídeo')) {
+  if (/(?:volt[ae]r?|retorn[ae]r?|sair|p[aá]gina\s+(?:anterior|antes)|fechar\s+v[ií]deo|sair\s+do\s+v[ií]deo)/i.test(normalized)) {
     probs['navegacao'] = 0.99;
     return {
       action: 'BACK',

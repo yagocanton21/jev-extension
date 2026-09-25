@@ -131,6 +131,10 @@ function mapJevAnswerToExtensionAction(jevData, prompt, context, latency) {
     effectiveChoice = 'aba anterior';
     confidence = 1.0;
     probabilities = { 'aba anterior': 1.0 };
+  } else if (/^(?:volt[ae]r?|retorn[ae]r?|sair)(?:\s+(?:uma\s+)?p[aá]gina)?(?:\s+(?:antes|atr[aá]s|anterior))?$|^(?:p[aá]gina\s+(?:anterior|antes))$/i.test(trimmed)) {
+    effectiveChoice = 'voltar';
+    confidence = 1.0;
+    probabilities = { 'voltar': 1.0 };
   } else if (/^(?:dar\s+)?play(?:\s+no\s+v[ií]deo)?$|^(?:tocar|iniciar|reproduzir|despausar|continuar)(?:\s+o)?(?:\s+v[ií]deo)?$/i.test(trimmed) || /^play$/i.test(trimmed)) {
     effectiveChoice = 'reproduzir video';
     confidence = 1.0;

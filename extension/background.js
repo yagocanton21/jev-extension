@@ -56,16 +56,62 @@ async function handleActionExecution(payload) {
       if (!activeTab || !activeTab.id) {
         throw new Error('Nenhuma aba ativa para voltar.');
       }
-      try {
-        await chrome.tabs.goBack(activeTab.id);
-        return { message: 'Voltando para a página anterior / saindo do vídeo.' };
-      } catch (err) {
-        if (activeTab.url?.includes('youtube.com/watch')) {
+
+      // Se for página de vídeo do YouTube (/watch), sai do vídeo retornando para a Home ou histórico
+      if (activeTab.url?.includes('youtube.com/watch')) {
+        try {
+          await chrome.tabs.goBack(activeTab.id);
+          return { message: 'Saindo do vídeo e voltando para a página anterior.' };
+        } catch {
           await chrome.tabs.update(activeTab.id, { url: 'https://www.youtube.com' });
           return { message: 'Retornando à página inicial do YouTube.' };
         }
-        throw err;
       }
+
+      let wentBack = false;
+
+      // 1. Tenta navegação nativa de histórico da aba
+      try {
+        await chrome.tabs.goBack(activeTab.id);
+        wentBack = true;
+      } catch (err) {
+        console.warn('[Jev Background] chrome.tabs.goBack falhou:', err.message);
+      }
+
+      // 2. Se falhar, tenta history.back() no contexto da página (ideal para SPAs como React/Vue)
+      if (!wentBack) {
+        try {
+          const results = await chrome.scripting.executeScript({
+            target: { tabId: activeTab.id },
+            func: () => {
+              if (window.history && window.history.length > 1) {
+                window.history.back();
+                return true;
+              }
+              return false;
+            }
+          });
+          if (results && results[0]?.result) {
+            wentBack = true;
+          }
+        } catch (scriptErr) {
+          console.warn('[Jev Background] scripting history.back falhou:', scriptErr.message);
+        }
+      }
+
+      // 3. Se a aba NÃO tem histórico para voltar (ex: o link foi aberto em uma NOVA ABA a partir da busca)
+      // O comportamento natural e esperado pelo usuário é fechar essa aba e voltar para a aba de origem!
+      if (!wentBack) {
+        const allTabs = await chrome.tabs.query({ currentWindow: true });
+        if (allTabs.length > 1) {
+          await chrome.tabs.remove(activeTab.id);
+          return { message: 'Sem histórico nesta aba. Fechando e retornando para a aba de pesquisa anterior.' };
+        } else {
+          return { message: 'Não há páginas anteriores no histórico desta aba.' };
+        }
+      }
+
+      return { message: 'Voltando para a página anterior.' };
     }
 
     case 'FORWARD': {
