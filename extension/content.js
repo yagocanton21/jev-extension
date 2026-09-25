@@ -216,7 +216,7 @@
         let element = null;
 
         // Suporte especial para seleção ordinal (primeiro vídeo, segundo resultado, anúncio da esquerda, da direita, etc.)
-        const isOrdinal = searchTarget.match(/(?:primeir[oa]|1[ºª]?|segund[oa]|2[ºª]?|terceir[oa]|3[ºª]?|quart[oa]|4[ºª]?|quint[oa]|5[ºª]?|sext[oa]|6[ºª]?|s[eé]tim[oa]|7[ºª]?|oitav[oa]|8[ºª]?|non[oa]|9[ºª]?|d[eé]cim[oa]|10[ºª]?|[uú]ltim[oa]|pr[oó]xim[oa]|seguinte|de\s+baixo|abaixo|esquerda|direita)/i);
+        const isOrdinal = searchTarget.match(/(?:^|\s)(?:primeir[oa]|segund[oa]|terceir[oa]|quart[oa]|quint[oa]|sext[oa]|s[eé]tim[oa]|oitav[oa]|non[oa]|d[eé]cim[oa]|[uú]ltim[oa]|pr[oó]xim[oa]|seguinte|de\s+baixo|abaixo|esquerda|direita|\d{1,2}[ºª]|\d{1,2}[oa]\b)(?:\s|$)/i);
         const isGenericOnly = /^(?:o\s+|a\s+|o\s+primeiro\s+|a\s+primeira\s+)?(?:v[ií]deo|resultado|item|link|produto)s?$/i.test(searchTarget);
 
         if (isOrdinal) {
@@ -558,8 +558,8 @@
       }
 
       if (matches && score > highestScore) {
-        // Encontra o container do produto (card, li, article, etc.)
-        const card = pEl.closest('li, article, [class*="card" i], [class*="item" i], [class*="product" i], [class*="result" i], [class*="poly-card" i], [class*="ui-search-layout__item" i]') || pEl.parentElement;
+        // Encontra o container individual do produto (card, li, article, etc.)
+        const card = pEl.closest('li.ui-search-layout__item, .poly-card, [data-component-type="s-search-result"], article, [class*="card" i]:not([class*="layout"]):not([class*="results"]):not([class*="main"]), [class*="item" i]:not([class*="layout"]):not([class*="results"]):not([class*="main"]), li') || pEl.parentElement;
 
         let clickable = null;
         if (card) {
@@ -707,8 +707,8 @@
         if (el.tagName && el.tagName.toLowerCase().startsWith('ytd-')) {
           bestMatch = el.querySelector('a#video-title, a#video-title-link, a#thumbnail, a[href*="/watch"], a[href*="/live"]') || el.querySelector('a') || el;
         } else {
-          // Se o elemento estiver dentro de um card de produto e não for link direto, encontra o link do produto
-          const cardParent = el.closest('li, article, [class*="card" i], [class*="product" i], [class*="item" i]');
+          // Se o elemento estiver dentro de um card individual de produto e não for link direto, encontra o link do produto
+          const cardParent = el.closest('li.ui-search-layout__item, .poly-card, [data-component-type="s-search-result"], article, [class*="card" i]:not([class*="layout"]):not([class*="results"]):not([class*="main"]), [class*="item" i]:not([class*="layout"]):not([class*="results"]):not([class*="main"]), li');
           if (cardParent && el.tagName !== 'A' && el.tagName !== 'BUTTON') {
             const cardLink = cardParent.querySelector('a.poly-component__title, a[class*="title" i], h2 a, h3 a, a[href*="/p/"], a[href*="/dp/"], a');
             bestMatch = cardLink || el.closest('a') || el;
